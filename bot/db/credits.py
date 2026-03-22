@@ -85,3 +85,22 @@ async def add_credits(user_id: int, delta: int, reason: str) -> int:
 async def deduct_credits(user_id: int, delta: int, reason: str) -> int:
     """Deduct delta credits (delta should be positive). Returns new balance."""
     return await add_credits(user_id, -delta, reason)
+
+
+async def check_and_deduct_credits(user_id: int, amount: int, reason: str) -> bool:
+    """Atomically check balance and deduct. Returns False if insufficient funds."""
+    async with _lock:
+        con = sqlite3.connect(_DB_PATH)
+        row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
+        if row is None or row[0] < amount:
+            con.close()
+            return False
+        now = _now()
+        con.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
+        con.execute(
+            "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
+            (user_id, -amount, reason, now),
+        )
+        con.commit()
+        con.close()
+        return True

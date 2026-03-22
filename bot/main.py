@@ -13,6 +13,7 @@ from bot.commands.voiceover import build_voiceover_handler
 from bot.config import settings
 from bot.credits.manager import CreditManager
 from bot.db.credits import init_db
+from bot.db.voices import init_voices_db
 from bot.providers.payment.mock_payment import MockPaymentProvider
 from bot.providers.music.elevenlabs_music import ElevenLabsMusicProvider
 from bot.providers.music.tempolor_music import TempolorMusicProvider
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     init_db()
+    init_voices_db()
 
     app = Application.builder().token(settings.telegram_bot_token).build()
 
