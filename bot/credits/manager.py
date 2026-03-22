@@ -22,11 +22,7 @@ class CreditManager:
     async def check_and_deduct(self, user_id: int, feature: str) -> bool:
         """Deduct COSTS[feature] if balance is sufficient. Returns False if not enough credits."""
         cost = COSTS[feature]
-        balance = await db.get_balance(user_id)
-        if balance is None or balance < cost:
-            return False
-        await db.deduct_credits(user_id, cost, feature)
-        return True
+        return await db.check_and_deduct_credits(user_id, cost, feature) 
 
     async def top_up(self, user_id: int, amount: int) -> tuple[int, int]:
         """Process payment and credit account. Returns (credits_added, new_balance)."""
