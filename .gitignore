@@ -15,3 +15,4 @@ tokens/
 .claude/
 problems/
 data/
+*.log
