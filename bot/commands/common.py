@@ -40,7 +40,9 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def _cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     context.user_data.clear()
-    context.user_data["_cancelled"] = True  # signal any in-flight generation to abort
+    # Re-queue the update so the tapped button's own handler can process it
+    # (e.g. tapping Credits mid-song should open the credits flow, not be swallowed)
+    await context.application.update_queue.put(update)
     return ConversationHandler.END
 
 
