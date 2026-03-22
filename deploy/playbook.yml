@@ -1,0 +1,63 @@
+---
+- name: Deploy AI Creator Bot (dev)
+  hosts: bot
+  gather_facts: true
+
+  vars:
+    app_dir: ~/dev/creator-bot
+    repo_url: https://github.com/kifbell/creator-bot.git
+    branch: main
+    bot_env: test
+
+  tasks:
+    - name: Install system packages
+      become: true
+      apt:
+        name:
+          - python3
+          - python3-venv
+          - python3-pip
+          - git
+        state: present
+        update_cache: true
+
+    - name: Clone or update repo
+      git:
+        repo: "{{ repo_url }}"
+        dest: "{{ app_dir }}"
+        version: "{{ branch }}"
+        force: true
+
+    - name: Create virtualenv and install dependencies
+      pip:
+        requirements: "{{ app_dir }}/requirements.txt"
+        virtualenv: "{{ app_dir }}/.venv"
+        virtualenv_command: python3 -m venv
+
+    - name: Copy .env file to server
+      copy:
+        src: ../.env
+        dest: "{{ app_dir }}/.env"
+        mode: "0600"
+
+    - name: Stop existing bot process
+      shell: pkill -f "python -m bot.main" || true
+
+    - name: Start bot in background
+      shell: |
+        cd {{ app_dir }}
+        BOT_ENV={{ bot_env }} nohup .venv/bin/python -m bot.main > bot.log 2>&1 &
+        disown
+      async: 10
+      poll: 0
+
+    - name: Verify bot is running
+      shell: pgrep -f "python -m bot.main"
+      register: bot_pid
+      retries: 3
+      delay: 2
+      until: bot_pid.rc == 0
+
+    - name: Show bot PID
+      debug:
+        msg: "Bot is running with PID {{ bot_pid.stdout }}"

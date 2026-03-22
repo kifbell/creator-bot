@@ -16,3 +16,4 @@ tokens/
 problems/
 data/
 *.log
+deploy/inventory.ini
