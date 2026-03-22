@@ -14,3 +14,4 @@ tokens/
 *.wav
 .claude/
 problems/
+data/

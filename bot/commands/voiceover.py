@@ -18,7 +18,8 @@ from telegram.ext import (
     filters,
 )
 
-from bot.commands.common import cancel
+from bot.commands.common import BTN_VOICEOVER, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
+from bot.credits.manager import CreditManager
 from bot.registry import ProviderRegistry
 from bot.utils.audio import delete_temp_file, download_telegram_audio
 
@@ -63,6 +64,18 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text("Something went wrong. Please start again with /voiceover.")
         return ConversationHandler.END
 
+    user_id = update.message.from_user.id
+    cm: CreditManager = context.bot_data["credit_manager"]
+    await cm.ensure_user(user_id)
+
+    if not await cm.check_and_deduct(user_id, "voiceover"):
+        bal = await cm.get_balance(user_id)
+        await update.message.reply_text(
+            f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
+
     await update.message.reply_text("Cloning voice and generating audio…")
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
@@ -76,9 +89,19 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             text=text,
             voice_name=voice_name,
         )
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Voice cloning failed: {e}",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
     finally:
         delete_temp_file(sample_path)
+        cancelled = context.user_data.pop("_cancelled", False)
         context.user_data.clear()
+
+    if cancelled:
+        return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "voiceover.mp3"
@@ -95,11 +118,11 @@ def build_voiceover_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("voiceover", voiceover_start),
-            MessageHandler(filters.Text(["🎤 Voiceover"]), voiceover_start),
+            MessageHandler(filters.Text([BTN_VOICEOVER]), voiceover_start),
         ],
         states={
             WAITING_SAMPLE: [MessageHandler(audio_filter, receive_sample)],
-            WAITING_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text)],
+            WAITING_TEXT: [MessageHandler(USER_TEXT, receive_text)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
     )

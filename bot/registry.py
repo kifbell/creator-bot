@@ -1,6 +1,6 @@
+from bot.providers.music.base_music import MusicProvider
 from bot.providers.tts.base_tts import TTSProvider
 from bot.providers.voice_clone.base_clone import VoiceCloneProvider
-from bot.providers.music.base_music import MusicProvider
 
 
 class ProviderRegistry:
@@ -8,11 +8,11 @@ class ProviderRegistry:
         self,
         tts: TTSProvider,
         voice_clone: VoiceCloneProvider,
-        music: MusicProvider | None = None,
+        music_providers: dict[str, MusicProvider] | None = None,
     ) -> None:
         self._tts = tts
         self._voice_clone = voice_clone
-        self._music = music
+        self._music_providers: dict[str, MusicProvider] = music_providers or {}
 
     def get_tts(self) -> TTSProvider:
         return self._tts
@@ -20,7 +20,10 @@ class ProviderRegistry:
     def get_voice_clone(self) -> VoiceCloneProvider:
         return self._voice_clone
 
-    def get_music(self) -> MusicProvider:
-        if self._music is None:
-            raise NotImplementedError("No music provider configured.")
-        return self._music
+    def get_music(self, provider: str = "elevenlabs") -> MusicProvider:
+        if provider not in self._music_providers:
+            raise NotImplementedError(f"Music provider '{provider}' not configured.")
+        return self._music_providers[provider]
+
+    def music_providers(self) -> list[str]:
+        return list(self._music_providers.keys())

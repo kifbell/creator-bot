@@ -20,7 +20,8 @@ from telegram.ext import (
     filters,
 )
 
-from bot.commands.common import MAIN_MENU, cancel
+from bot.commands.common import BTN_SPEAK, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
+from bot.credits.manager import CreditManager
 from bot.registry import ProviderRegistry
 
 CHOOSING_VOICE = 0
@@ -37,7 +38,14 @@ async def speak_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     tts = registry.get_tts()
 
     if _VOICES_CACHE_KEY not in context.bot_data:
-        voices = await tts.list_voices()
+        try:
+            voices = await tts.list_voices()
+        except Exception as e:
+            await update.message.reply_text(
+                f"❌ Could not load voices: {e}\n\nPlease try again.",
+                reply_markup=MAIN_MENU,
+            )
+            return ConversationHandler.END
         context.bot_data[_VOICES_CACHE_KEY] = voices
     else:
         voices = context.bot_data[_VOICES_CACHE_KEY]
@@ -89,11 +97,33 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text("Something went wrong. Please start again with /speak.")
         return ConversationHandler.END
 
+    user_id = update.message.from_user.id
+    cm: CreditManager = context.bot_data["credit_manager"]
+    await cm.ensure_user(user_id)
+
+    if not await cm.check_and_deduct(user_id, "speak"):
+        bal = await cm.get_balance(user_id)
+        await update.message.reply_text(
+            f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
+
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
     tts = registry.get_tts()
-    result = await tts.synthesize(text=text, voice_id=voice_id)
+    try:
+        result = await tts.synthesize(text=text, voice_id=voice_id)
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Speech generation failed: {e}\n\nTry again or choose a different voice.",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
+
+    if context.user_data.pop("_cancelled", False):
+        return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"
@@ -121,11 +151,33 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("Something went wrong. Please start again with /speak.")
         return ConversationHandler.END
 
+    user_id = update.message.from_user.id
+    cm: CreditManager = context.bot_data["credit_manager"]
+    await cm.ensure_user(user_id)
+
+    if not await cm.check_and_deduct(user_id, "speak"):
+        bal = await cm.get_balance(user_id)
+        await update.message.reply_text(
+            f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
+
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
     tts = registry.get_tts()
-    result = await tts.synthesize_described(text=text, description=description)
+    try:
+        result = await tts.synthesize_described(text=text, description=description)
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ Speech generation failed: {e}\n\nTry again or describe a different voice.",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
+
+    if context.user_data.pop("_cancelled", False):
+        return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"
@@ -143,14 +195,14 @@ def build_speak_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
             CommandHandler("speak", speak_start),
-            MessageHandler(filters.Text(["🎙 Speak"]), speak_start),
+            MessageHandler(filters.Text([BTN_SPEAK]), speak_start),
         ],
         states={
-            CHOOSING_VOICE: [MessageHandler(filters.TEXT & ~filters.COMMAND, voice_chosen)],
-            TYPING_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_text)],
-            TYPING_DESCRIPTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, describe_voice_received)],
-            TYPING_DESCRIBED_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_described_text)],
+            CHOOSING_VOICE: [MessageHandler(USER_TEXT, voice_chosen)],
+            TYPING_TEXT: [MessageHandler(USER_TEXT, receive_text)],
+            TYPING_DESCRIPTION: [MessageHandler(USER_TEXT, describe_voice_received)],
+            TYPING_DESCRIBED_TEXT: [MessageHandler(USER_TEXT, receive_described_text)],
         },
-        fallbacks=[CommandHandler("cancel", cancel)],
+        fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
     )
