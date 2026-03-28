@@ -68,9 +68,6 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         return ConversationHandler.END
 
-    if context.user_data.pop("_cancelled", False):
-        return ConversationHandler.END
-
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "song.mp3"
     await update.message.reply_audio(
@@ -79,6 +76,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         reply_markup=MAIN_MENU,
     )
 
+    context.user_data.clear()
     return ConversationHandler.END
 
 

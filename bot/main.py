@@ -1,6 +1,7 @@
 """Entry point — bootstraps the Telegram Application and registers all handlers."""
 
 import logging
+from logging.handlers import RotatingFileHandler
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
@@ -29,7 +30,7 @@ logging.basicConfig(
     level=logging.INFO,
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("bot.log", encoding="utf-8"),
+        RotatingFileHandler("bot.log", maxBytes=5*1024*1024, backupCount=3, encoding="utf-8"),
     ],
 )
 logger = logging.getLogger(__name__)

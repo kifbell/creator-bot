@@ -6,7 +6,7 @@ A Telegram bot (`@genaicreatorbot`) with AI audio features powered by ElevenLabs
 |---|---|
 | `/speak` | Text-to-speech with preset ElevenLabs voices |
 | `/voiceover` | Clone a voice from an audio sample, then speak new text |
-| `/song` | Song generation *(coming soon)* |
+| `/song` | Generate a sound/music clip from a text prompt |
 | `/cancel` | Cancel any active flow |
 
 ---

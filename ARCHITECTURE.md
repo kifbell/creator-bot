@@ -59,8 +59,8 @@ Voice selection uses a `ReplyKeyboardMarkup` (bottom bar buttons). Each voice na
 
 ### /voiceover (states 10–19)
 ```
-UPLOADING_SAMPLE (10) → user sends voice message or audio
-    └── TYPING_VOICEOVER_TEXT (11) → clone_and_speak() → MP3
+WAITING_SAMPLE (10) → user sends voice message or audio
+    └── WAITING_TEXT (11) → clone_and_speak() → MP3
 ```
 
 ### /song (states 20–29)

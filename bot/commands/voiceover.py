@@ -170,18 +170,13 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return ConversationHandler.END
 
-    if context.user_data.pop("_cancelled", False):
-        if not using_saved:
-            delete_temp_file(sample_path)
-        context.user_data.clear()
-        return ConversationHandler.END
-
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "voiceover.mp3"
     await update.message.reply_audio(
         audio=audio_file,
         title="Voiceover",
         caption="Done! The cloned voice has been removed from our servers.",
+        reply_markup=MAIN_MENU if using_saved else ReplyKeyboardRemove(),
     )
 
     # If using a saved sample, skip save prompt — don't delete the file
@@ -190,7 +185,16 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         return ConversationHandler.END
 
     # Persist the temp file and offer to save
-    persisted_path = persist_voice_sample(sample_path, user_id)
+    try:
+        persisted_path = persist_voice_sample(sample_path, user_id)
+    except OSError as e:
+        delete_temp_file(sample_path)
+        context.user_data.clear()
+        await update.message.reply_text(
+            f"❌ Could not save voice sample: {e}",
+            reply_markup=MAIN_MENU,
+        )
+        return ConversationHandler.END
     delete_temp_file(sample_path)
     context.user_data["_persisted_path"] = persisted_path
 
