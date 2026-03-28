@@ -61,7 +61,7 @@ TYPING_PROMPT (20) → generate → MP3 → END
 
 **`/settings` (states 30–39)**
 ```
-CHOOSING_FUNCTION (30) → CHOOSING_PROVIDER (31) → save → END
+CHOOSING_FUNCTION (30) → CHOOSING_MODEL (31) → save → END
 ```
 
 **`/topup` (states 40–49)**

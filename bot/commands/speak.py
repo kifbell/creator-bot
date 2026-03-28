@@ -196,9 +196,6 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return ConversationHandler.END
 
-    if context.user_data.pop("_cancelled", False):
-        return ConversationHandler.END
-
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"
     await update.message.reply_audio(
@@ -248,9 +245,6 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
             f"❌ Speech generation failed: {e}\n\nTry again or describe a different voice.",
             reply_markup=MAIN_MENU,
         )
-        return ConversationHandler.END
-
-    if context.user_data.pop("_cancelled", False):
         return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)

@@ -15,23 +15,25 @@ def init_db() -> None:
     """Create tables if they don't exist. Called once on startup."""
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(_DB_PATH)
-    con.executescript("""
-        CREATE TABLE IF NOT EXISTS users (
-            user_id    INTEGER PRIMARY KEY,
-            balance    INTEGER NOT NULL DEFAULT 0,
-            created_at TEXT    NOT NULL
-        );
+    try:
+        con.executescript("""
+            CREATE TABLE IF NOT EXISTS users (
+                user_id    INTEGER PRIMARY KEY,
+                balance    INTEGER NOT NULL DEFAULT 0,
+                created_at TEXT    NOT NULL
+            );
 
-        CREATE TABLE IF NOT EXISTS transactions (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id    INTEGER NOT NULL,
-            delta      INTEGER NOT NULL,
-            reason     TEXT    NOT NULL,
-            created_at TEXT    NOT NULL
-        );
-    """)
-    con.commit()
-    con.close()
+            CREATE TABLE IF NOT EXISTS transactions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL,
+                delta      INTEGER NOT NULL,
+                reason     TEXT    NOT NULL,
+                created_at TEXT    NOT NULL
+            );
+        """)
+        con.commit()
+    finally:
+        con.close()
 
 
 def _now() -> str:
@@ -42,44 +44,50 @@ async def get_balance(user_id: int) -> int | None:
     """Return balance, or None if user doesn't exist."""
     async with _lock:
         con = sqlite3.connect(_DB_PATH)
-        row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        con.close()
-        return row[0] if row else None
+        try:
+            row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            return row[0] if row else None
+        finally:
+            con.close()
 
 
 async def create_user(user_id: int, initial_balance: int, reason: str) -> int:
     """Insert a new user with initial_balance. Returns final balance."""
     async with _lock:
         con = sqlite3.connect(_DB_PATH)
-        now = _now()
-        con.execute(
-            "INSERT INTO users (user_id, balance, created_at) VALUES (?, ?, ?)",
-            (user_id, initial_balance, now),
-        )
-        if initial_balance != 0:
+        try:
+            now = _now()
             con.execute(
-                "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
-                (user_id, initial_balance, reason, now),
+                "INSERT INTO users (user_id, balance, created_at) VALUES (?, ?, ?)",
+                (user_id, initial_balance, now),
             )
-        con.commit()
-        con.close()
-        return initial_balance
+            if initial_balance != 0:
+                con.execute(
+                    "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
+                    (user_id, initial_balance, reason, now),
+                )
+            con.commit()
+            return initial_balance
+        finally:
+            con.close()
 
 
 async def add_credits(user_id: int, delta: int, reason: str) -> int:
     """Add delta credits to user and log transaction. Returns new balance."""
     async with _lock:
         con = sqlite3.connect(_DB_PATH)
-        now = _now()
-        con.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (delta, user_id))
-        con.execute(
-            "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, delta, reason, now),
-        )
-        con.commit()
-        row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        con.close()
-        return row[0]
+        try:
+            now = _now()
+            con.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (delta, user_id))
+            con.execute(
+                "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, delta, reason, now),
+            )
+            con.commit()
+            row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            return row[0]
+        finally:
+            con.close()
 
 
 async def deduct_credits(user_id: int, delta: int, reason: str) -> int:
@@ -91,16 +99,17 @@ async def check_and_deduct_credits(user_id: int, amount: int, reason: str) -> bo
     """Atomically check balance and deduct. Returns False if insufficient funds."""
     async with _lock:
         con = sqlite3.connect(_DB_PATH)
-        row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
-        if row is None or row[0] < amount:
+        try:
+            row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
+            if row is None or row[0] < amount:
+                return False
+            now = _now()
+            con.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
+            con.execute(
+                "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, -amount, reason, now),
+            )
+            con.commit()
+            return True
+        finally:
             con.close()
-            return False
-        now = _now()
-        con.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
-        con.execute(
-            "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, -amount, reason, now),
-        )
-        con.commit()
-        con.close()
-        return True
