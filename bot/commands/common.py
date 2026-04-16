@@ -4,6 +4,7 @@ from telegram import KeyboardButton, ReplyKeyboardMarkup, Update
 from telegram.ext import CommandHandler, ContextTypes, ConversationHandler, MessageHandler, filters
 
 from bot.commands.buttons import ALL, FallbackAction, MenuButton
+from bot.config import settings
 
 # Convenience re-exports so command files can do:
 #   from bot.commands.common import BTN_SPEAK
@@ -22,7 +23,7 @@ BTN_CANCEL    = _b.CANCEL.label
 
 async def more(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "*AI Creator Bot*\n\n"
+        f"*AI Creator Bot*  ·  `{settings.bot_env}`\n\n"
         "🎙 *Speak* — Text-to-speech using ElevenLabs preset voices or a custom voice description\n"
         "🎤 *Voiceover* — Upload a voice sample, then generate speech that sounds like it\n"
         "🎵 *Song* — Generate a sound/music clip from a text prompt\n\n"

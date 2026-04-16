@@ -5,7 +5,8 @@ from logging.handlers import RotatingFileHandler
 
 from telegram.ext import Application, CommandHandler, MessageHandler, filters
 
-from bot.commands.common import BTN_INFO, cancel, help_command, more, start
+from bot.commands.common import cancel, help_command, start
+from bot.commands.info import build_info_handler
 from bot.commands.settings import build_settings_handler
 from bot.commands.song import build_song_handler
 from bot.commands.speak import build_speak_handler
@@ -75,7 +76,7 @@ def main() -> None:
     app.add_handler(build_settings_handler())
     app.add_handler(build_topup_handler())
 
-    app.add_handler(MessageHandler(filters.Text([BTN_INFO]), more))
+    app.add_handler(build_info_handler())
 
     app.add_handler(CommandHandler("cancel", cancel))
 
