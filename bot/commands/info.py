@@ -29,7 +29,6 @@ _INFO_KB = ReplyKeyboardMarkup(
         [KeyboardButton(_BACK_LABEL)],
     ],
     resize_keyboard=True,
-    one_time_keyboard=True,
 )
 
 _ABOUT_TEXT = (
@@ -66,7 +65,7 @@ _AGREEMENT_TEXT = (
 
 async def info_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text(
-        "ℹ️ *Info*",
+        _ABOUT_TEXT,
         parse_mode="Markdown",
         reply_markup=_INFO_KB,
     )
@@ -93,7 +92,7 @@ async def info_menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return INFO_MENU
 
     if text == _BACK_LABEL:
-        await update.message.reply_text("OK", reply_markup=MAIN_MENU)
+        await update.message.reply_text("👋 Back to menu", reply_markup=MAIN_MENU)
         return ConversationHandler.END
 
     await update.message.reply_text("Please tap one of the buttons.")
