@@ -102,6 +102,7 @@ async def info_menu_choice(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 def build_info_handler() -> ConversationHandler:
     return ConversationHandler(
         entry_points=[
+            CommandHandler("info", info_start),
             MessageHandler(filters.Text([BTN_INFO]), info_start),
         ],
         states={
