@@ -7,6 +7,7 @@ State range: 10–19
   SAVE_VOICE_SAMPLE     = 12
   NAME_VOICE_SAMPLE     = 13
   CHOOSING_SAVED_SAMPLE = 14
+  CHOOSING_DELETE_SAMPLE = 15
 """
 
 import io
@@ -24,7 +25,7 @@ from telegram.ext import (
 
 from bot.commands.common import BTN_VOICEOVER, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
 from bot.credits.manager import CreditManager
-from bot.db.voices import list_voice_samples, save_voice_sample
+from bot.db.voices import delete_voice_sample, list_voice_samples, save_voice_sample
 from bot.registry import ProviderRegistry
 from bot.utils.audio import delete_temp_file, download_telegram_audio, persist_voice_sample
 
@@ -33,8 +34,10 @@ WAITING_TEXT = 11
 SAVE_VOICE_SAMPLE = 12
 NAME_VOICE_SAMPLE = 13
 CHOOSING_SAVED_SAMPLE = 14
+CHOOSING_DELETE_SAMPLE = 15
 
 _RECORD_NEW_LABEL = "🎙️ Record new"
+_DELETE_LABEL = "🗑 Delete"
 _BACK_LABEL = "⬅️ Back"
 
 _YES_NO_KB = ReplyKeyboardMarkup(
@@ -55,7 +58,7 @@ async def voiceover_start(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             label = f"{name}"
             mapping[label] = (sample_id, file_path)
             keyboard.append([KeyboardButton(label)])
-        keyboard.append([KeyboardButton(_RECORD_NEW_LABEL)])
+        keyboard.append([KeyboardButton(_RECORD_NEW_LABEL), KeyboardButton(_DELETE_LABEL)])
 
         context.user_data["_saved_sample_map"] = mapping
 
@@ -86,6 +89,16 @@ async def saved_sample_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
         )
         return WAITING_SAMPLE
 
+    if text == _DELETE_LABEL:
+        mapping = context.user_data.get("_saved_sample_map", {})
+        keyboard = [[KeyboardButton(label)] for label in mapping]
+        keyboard.append([KeyboardButton(_BACK_LABEL)])
+        await update.message.reply_text(
+            "Tap a sample to delete:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+        )
+        return CHOOSING_DELETE_SAMPLE
+
     mapping = context.user_data.get("_saved_sample_map", {})
     entry = mapping.get(text)
     if not entry:
@@ -103,6 +116,32 @@ async def saved_sample_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE
         reply_markup=ReplyKeyboardRemove(),
     )
     return WAITING_TEXT
+
+
+async def delete_sample_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+
+    if text == _BACK_LABEL:
+        context.user_data.pop("_saved_sample_map", None)
+        return await voiceover_start(update, context)
+
+    mapping = context.user_data.get("_saved_sample_map", {})
+    entry = mapping.get(text)
+    if not entry:
+        await update.message.reply_text("Please tap one of the buttons.")
+        return CHOOSING_DELETE_SAMPLE
+
+    sample_id, file_path = entry
+    user_id = update.message.from_user.id
+    await delete_voice_sample(user_id, sample_id)
+    delete_temp_file(file_path)
+    context.user_data.pop("_saved_sample_map", None)
+
+    await update.message.reply_text(
+        f"✅ Sample \"{text}\" deleted.",
+        reply_markup=MAIN_MENU,
+    )
+    return ConversationHandler.END
 
 
 async def receive_sample(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -149,7 +188,9 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    clone_provider = registry.get_voice_clone()
+    clone_provider = registry.get_voice_clone(
+        provider=context.user_data.get("voiceover_provider", "elevenlabs")
+    )
 
     voice_name = f"ivc_{update.message.from_user.id}"
     using_saved = context.user_data.get("_using_saved_sample", False)
@@ -261,6 +302,7 @@ def build_voiceover_handler() -> ConversationHandler:
             SAVE_VOICE_SAMPLE: [MessageHandler(USER_TEXT, handle_save_voice_sample)],
             NAME_VOICE_SAMPLE: [MessageHandler(USER_TEXT, handle_name_voice_sample)],
             CHOOSING_SAVED_SAMPLE: [MessageHandler(USER_TEXT, saved_sample_chosen)],
+            CHOOSING_DELETE_SAMPLE: [MessageHandler(USER_TEXT, delete_sample_chosen)],
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,

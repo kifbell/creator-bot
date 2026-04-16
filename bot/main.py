@@ -23,6 +23,7 @@ from bot.providers.stub.stub_clone import StubVoiceCloneProvider
 from bot.providers.stub.stub_music import StubMusicProvider
 from bot.providers.stub.stub_tts import StubTTSProvider
 from bot.providers.tts.elevenlabs_tts import ElevenLabsTTSProvider
+from bot.providers.tts.openai_tts import OpenAITTSProvider
 from bot.providers.voice_clone.elevenlabs_clone import ElevenLabsCloneProvider
 from bot.registry import ProviderRegistry
 
@@ -46,8 +47,13 @@ def main() -> None:
     if settings.bot_env == "test":
         logger.info("BOT_ENV=test — using stub providers (no API calls will be made)")
         registry = ProviderRegistry(
-            tts=StubTTSProvider(),
-            voice_clone=StubVoiceCloneProvider(),
+            tts_providers={
+                "elevenlabs": StubTTSProvider(),
+                "openai": StubTTSProvider(),
+            },
+            clone_providers={
+                "elevenlabs": StubVoiceCloneProvider(),
+            },
             music_providers={
                 "elevenlabs": StubMusicProvider(),
                 "tempolor": StubMusicProvider(),
@@ -56,8 +62,13 @@ def main() -> None:
     else:
         logger.info("BOT_ENV=prod — using real API providers")
         registry = ProviderRegistry(
-            tts=ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key),
-            voice_clone=ElevenLabsCloneProvider(api_key=settings.elevenlabs_api_key),
+            tts_providers={
+                "elevenlabs": ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key),
+                "openai": OpenAITTSProvider(api_key=settings.openai_api_key),
+            },
+            clone_providers={
+                "elevenlabs": ElevenLabsCloneProvider(api_key=settings.elevenlabs_api_key),
+            },
             music_providers={
                 "elevenlabs": ElevenLabsMusicProvider(api_key=settings.elevenlabs_api_key),
                 "tempolor": TempolorMusicProvider(api_key=settings.tempolor_api_key),

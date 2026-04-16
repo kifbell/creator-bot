@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     telegram_bot_token: str
     elevenlabs_api_key: str = ""
     tempolor_api_key: str = ""
+    openai_api_key: str = ""
     bot_env: str = "prod"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")

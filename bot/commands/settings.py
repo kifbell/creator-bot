@@ -20,22 +20,23 @@ from bot.commands.common import BTN_SETTINGS, MAIN_MENU, USER_TEXT, cancel, menu
 CHOOSING_FUNCTION = 30
 CHOOSING_MODEL = 31
 
-# Map function label → available models
-_FUNCTION_MODELS: dict[str, list[str]] = {
-    "🎵 Music": ["TemPolor v4.0", "ElevenLabs"],
+# Map function label → (setting key, available models)
+_FUNCTION_CONFIG: dict[str, tuple[str, list[str]]] = {
+    "Choose TTS model": ("tts_provider", ["ElevenLabs", "OpenAI"]),
+    "Choose voiceover model": ("voiceover_provider", ["ElevenLabs"]),
+    "Choose music model": ("music_provider", ["TemPolor v4.0", "ElevenLabs"]),
 }
 
 # Map model label → provider key used in registry
 _MODEL_TO_PROVIDER: dict[str, str] = {
     "TemPolor v4.0": "tempolor",
     "ElevenLabs": "elevenlabs",
+    "OpenAI": "openai",
 }
-
-_SETTING_KEY = "music_provider"
 
 
 async def settings_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    functions = list(_FUNCTION_MODELS.keys())
+    functions = list(_FUNCTION_CONFIG.keys())
     keyboard = [[KeyboardButton(f)] for f in functions]
     await update.message.reply_text(
         "⚙️ *Settings* — select a function to configure:",
@@ -47,12 +48,12 @@ async def settings_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def function_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     fn = update.message.text.strip()
-    if fn not in _FUNCTION_MODELS:
+    if fn not in _FUNCTION_CONFIG:
         await update.message.reply_text("Please tap one of the function buttons.")
         return CHOOSING_FUNCTION
 
     context.user_data["settings_function"] = fn
-    models = _FUNCTION_MODELS[fn]
+    _setting_key, models = _FUNCTION_CONFIG[fn]
     keyboard = [[KeyboardButton(m)] for m in models]
     await update.message.reply_text(
         f"Select a model for *{fn}*:",
@@ -65,14 +66,18 @@ async def function_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 async def model_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     model = update.message.text.strip()
     fn = context.user_data.get("settings_function", "🎵 Music")
-    valid_models = _FUNCTION_MODELS.get(fn, [])
+    config = _FUNCTION_CONFIG.get(fn)
+    if not config:
+        await update.message.reply_text("Please tap one of the model buttons.")
+        return CHOOSING_MODEL
 
+    setting_key, valid_models = config
     if model not in valid_models:
         await update.message.reply_text("Please tap one of the model buttons.")
         return CHOOSING_MODEL
 
     provider_key = _MODEL_TO_PROVIDER[model]
-    context.user_data[_SETTING_KEY] = provider_key
+    context.user_data[setting_key] = provider_key
 
     await update.message.reply_text(
         f"✅ *{fn}* will now use *{model}*.",

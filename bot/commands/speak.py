@@ -9,6 +9,7 @@ State range: 0–9
   SAVE_DESCRIBED_VOICE     = 4
   NAME_DESCRIBED_VOICE     = 5
   CHOOSING_SAVED_DESCRIPTION = 6
+  CHOOSING_DELETE_DESCRIPTION = 7
 """
 
 import io
@@ -27,6 +28,7 @@ from telegram.ext import (
 from bot.commands.common import BTN_SPEAK, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
 from bot.credits.manager import CreditManager
 from bot.db.voices import (
+    delete_voice_description,
     list_voice_descriptions,
     save_voice_description,
 )
@@ -39,11 +41,29 @@ TYPING_DESCRIBED_TEXT = 3
 SAVE_DESCRIBED_VOICE = 4
 NAME_DESCRIBED_VOICE = 5
 CHOOSING_SAVED_DESCRIPTION = 6
+CHOOSING_DELETE_DESCRIPTION = 7
 
 _VOICES_CACHE_KEY = "elevenlabs_voices"
 _DESCRIBE_LABEL = "✏️ Describe a voice"
 _SAVED_LABEL = "📂 My saved voices"
 _BACK_LABEL = "⬅️ Back"
+_DELETE_LABEL = "🗑 Delete"
+_LABEL_MAX = 64
+_SEPARATOR = " — "
+
+
+def _make_saved_label(name: str, description: str) -> str:
+    """Build a button label like 'My Voice — deep calm British...'."""
+    if not description:
+        return name[:_LABEL_MAX]
+    prefix = name + _SEPARATOR
+    remaining = _LABEL_MAX - len(prefix)
+    if remaining < 4:
+        return name[:_LABEL_MAX]
+    if len(description) <= remaining:
+        return prefix + description
+    return prefix + description[: remaining - 3] + "..."
+
 
 _YES_NO_KB = ReplyKeyboardMarkup(
     [[KeyboardButton("Yes"), KeyboardButton("No")]],
@@ -54,9 +74,11 @@ _YES_NO_KB = ReplyKeyboardMarkup(
 
 async def speak_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts()
+    provider = context.user_data.get("tts_provider", "elevenlabs")
+    tts = registry.get_tts(provider=provider)
 
-    if _VOICES_CACHE_KEY not in context.bot_data:
+    cache_key = f"{_VOICES_CACHE_KEY}_{provider}"
+    if cache_key not in context.bot_data:
         try:
             voices = await tts.list_voices()
         except Exception as e:
@@ -65,9 +87,9 @@ async def speak_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 reply_markup=MAIN_MENU,
             )
             return ConversationHandler.END
-        context.bot_data[_VOICES_CACHE_KEY] = voices
+        context.bot_data[cache_key] = voices
     else:
-        voices = context.bot_data[_VOICES_CACHE_KEY]
+        voices = context.bot_data[cache_key]
 
     keyboard = [[KeyboardButton(v.name)] for v in voices[:10]]
     keyboard.append([KeyboardButton(_DESCRIBE_LABEL)])
@@ -102,14 +124,14 @@ async def voice_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             await update.message.reply_text("You have no saved voices yet.")
             return CHOOSING_VOICE
 
-        # Store mapping of display label → (id, description)
+        # Store mapping of display label → (id, name, description)
         mapping = {}
         keyboard = []
         for voice_id, name, description in saved:
-            label = f"{name}"
-            mapping[label] = (voice_id, description)
+            label = _make_saved_label(name, description)
+            mapping[label] = (voice_id, name, description)
             keyboard.append([KeyboardButton(label)])
-        keyboard.append([KeyboardButton(_BACK_LABEL)])
+        keyboard.append([KeyboardButton(_DELETE_LABEL), KeyboardButton(_BACK_LABEL)])
 
         context.user_data["_saved_desc_map"] = mapping
 
@@ -119,7 +141,8 @@ async def voice_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return CHOOSING_SAVED_DESCRIPTION
 
-    voices = context.bot_data.get(_VOICES_CACHE_KEY, [])
+    provider = context.user_data.get("tts_provider", "elevenlabs")
+    voices = context.bot_data.get(f"{_VOICES_CACHE_KEY}_{provider}", [])
     voice = next((v for v in voices if v.name == text), None)
 
     if not voice:
@@ -144,23 +167,58 @@ async def saved_description_chosen(update: Update, context: ContextTypes.DEFAULT
         context.user_data.pop("_saved_desc_map", None)
         return await speak_start(update, context)
 
+    if text == _DELETE_LABEL:
+        mapping = context.user_data.get("_saved_desc_map", {})
+        keyboard = [[KeyboardButton(label)] for label in mapping]
+        keyboard.append([KeyboardButton(_BACK_LABEL)])
+        await update.message.reply_text(
+            "Tap a voice to delete:",
+            reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True),
+        )
+        return CHOOSING_DELETE_DESCRIPTION
+
     mapping = context.user_data.get("_saved_desc_map", {})
     entry = mapping.get(text)
     if not entry:
         await update.message.reply_text("Please tap one of the buttons.")
         return CHOOSING_SAVED_DESCRIPTION
 
-    _voice_id, description = entry
+    _voice_id, name, description = entry
     context.user_data["voice_description"] = description
     context.user_data["_using_saved_description"] = True
     context.user_data.pop("_saved_desc_map", None)
 
     await update.message.reply_text(
-        f"Voice: *{text}*\n\nWhat text should I read aloud?",
+        f"Voice: *{name}*\n\nWhat text should I read aloud?",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardRemove(),
     )
     return TYPING_DESCRIBED_TEXT
+
+
+async def delete_description_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    text = update.message.text.strip()
+
+    if text == _BACK_LABEL:
+        context.user_data.pop("_saved_desc_map", None)
+        return await speak_start(update, context)
+
+    mapping = context.user_data.get("_saved_desc_map", {})
+    entry = mapping.get(text)
+    if not entry:
+        await update.message.reply_text("Please tap one of the buttons.")
+        return CHOOSING_DELETE_DESCRIPTION
+
+    voice_id, name, _description = entry
+    user_id = update.message.from_user.id
+    await delete_voice_description(user_id, voice_id)
+    context.user_data.pop("_saved_desc_map", None)
+
+    await update.message.reply_text(
+        f"✅ Voice \"{name}\" deleted.",
+        reply_markup=MAIN_MENU,
+    )
+    return ConversationHandler.END
 
 
 async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -186,7 +244,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts()
+    tts = registry.get_tts(provider=context.user_data.get("tts_provider", "elevenlabs"))
     try:
         result = await tts.synthesize(text=text, voice_id=voice_id)
     except Exception as e:
@@ -237,7 +295,7 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts()
+    tts = registry.get_tts(provider=context.user_data.get("tts_provider", "elevenlabs"))
     try:
         result = await tts.synthesize_described(text=text, description=description)
     except Exception as e:
@@ -324,6 +382,7 @@ def build_speak_handler() -> ConversationHandler:
             SAVE_DESCRIBED_VOICE: [MessageHandler(USER_TEXT, handle_save_described_voice)],
             NAME_DESCRIBED_VOICE: [MessageHandler(USER_TEXT, handle_name_described_voice)],
             CHOOSING_SAVED_DESCRIPTION: [MessageHandler(USER_TEXT, saved_description_chosen)],
+            CHOOSING_DELETE_DESCRIPTION: [MessageHandler(USER_TEXT, delete_description_chosen)],
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
