@@ -1,5 +1,5 @@
 ---
-- name: Deploy AI Creator Bot (dev)
+- name: Deploy AI Creator Bot
   hosts: bot
   gather_facts: true
 
@@ -8,6 +8,7 @@
     repo_url: https://github.com/kifbell/creator-bot.git
     branch: main
     bot_env: test
+    service_name: creator-bot
 
   tasks:
     - name: Install system packages
@@ -40,24 +41,43 @@
         dest: "{{ app_dir }}/.env"
         mode: "0600"
 
-    - name: Stop existing bot process
-      shell: pkill -f "python -m bot.main" || true
+    - name: Deploy systemd service file
+      become: true
+      template:
+        src: creator-bot.service
+        dest: /etc/systemd/system/{{ service_name }}.service
+      notify: Reload systemd
 
-    - name: Start bot in background
-      shell: |
-        cd {{ app_dir }}
-        BOT_ENV={{ bot_env }} nohup .venv/bin/python -m bot.main > bot.log 2>&1 &
-        disown
-      async: 10
-      poll: 0
+    - name: Set BOT_ENV in service file
+      become: true
+      lineinfile:
+        path: /etc/systemd/system/{{ service_name }}.service
+        regexp: "^Environment=BOT_ENV="
+        line: "Environment=BOT_ENV={{ bot_env }}"
+      notify: Reload systemd
+
+    - name: Flush handlers
+      meta: flush_handlers
+
+    - name: Restart bot
+      become: true
+      systemd:
+        name: "{{ service_name }}"
+        state: restarted
+        enabled: true
 
     - name: Verify bot is running
-      shell: pgrep -f "python -m bot.main"
-      register: bot_pid
-      retries: 3
-      delay: 2
-      until: bot_pid.rc == 0
+      become: true
+      systemd:
+        name: "{{ service_name }}"
+      register: bot_status
 
-    - name: Show bot PID
+    - name: Show status
       debug:
-        msg: "Bot is running with PID {{ bot_pid.stdout }}"
+        msg: "{{ service_name }} is {{ bot_status.status.ActiveState }}, PID {{ bot_status.status.MainPID }}"
+
+  handlers:
+    - name: Reload systemd
+      become: true
+      systemd:
+        daemon_reload: true
