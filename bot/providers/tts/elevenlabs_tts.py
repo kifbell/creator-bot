@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import contextlib
 
 from elevenlabs.client import ElevenLabs
 
@@ -7,8 +8,9 @@ from bot.providers.tts.base_tts import TTSProvider, TTSResult, TTSVoice
 
 
 class ElevenLabsTTSProvider(TTSProvider):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, semaphore: asyncio.Semaphore | None = None) -> None:
         self._client = ElevenLabs(api_key=api_key)
+        self._semaphore = semaphore
 
     async def list_voices(self) -> list[TTSVoice]:
         def _fetch():
@@ -26,7 +28,8 @@ class ElevenLabsTTSProvider(TTSProvider):
             )
             return b"".join(audio_gen)
 
-        audio_bytes = await asyncio.to_thread(_synth)
+        async with self._semaphore or contextlib.nullcontext():
+            audio_bytes = await asyncio.to_thread(_synth)
         return TTSResult(audio_bytes=audio_bytes)
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
@@ -42,5 +45,6 @@ class ElevenLabsTTSProvider(TTSProvider):
             )
             return base64.b64decode(response.previews[0].audio_base_64)
 
-        audio_bytes = await asyncio.to_thread(_synth)
+        async with self._semaphore or contextlib.nullcontext():
+            audio_bytes = await asyncio.to_thread(_synth)
         return TTSResult(audio_bytes=audio_bytes)

@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import time
 
 import httpx
@@ -13,9 +14,10 @@ _SUCCESS_STATUS = "main_succeeded"
 
 
 class TempolorMusicProvider(MusicProvider):
-    def __init__(self, api_key: str, model: str = "TemPolor v4.0") -> None:
+    def __init__(self, api_key: str, model: str = "TemPolor v4.0", semaphore: asyncio.Semaphore | None = None) -> None:
         self._api_key = api_key
         self.model = model
+        self._semaphore = semaphore
 
     @property
     def _headers(self) -> dict:
@@ -25,7 +27,7 @@ class TempolorMusicProvider(MusicProvider):
         }
 
     async def generate(self, prompt: str) -> MusicResult:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with self._semaphore or contextlib.nullcontext(), httpx.AsyncClient(timeout=30.0) as client:
             resp = await client.post(
                 _GENERATE_URL,
                 headers=self._headers,
