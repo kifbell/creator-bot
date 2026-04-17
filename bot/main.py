@@ -1,5 +1,6 @@
 """Entry point — bootstraps the Telegram Application and registers all handlers."""
 
+import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 
@@ -66,17 +67,19 @@ def main() -> None:
         )
     else:
         logger.info("BOT_ENV=prod — using real API providers")
+        el_sem = asyncio.Semaphore(3)
+        tempolor_sem = asyncio.Semaphore(3)
         registry = ProviderRegistry(
             tts_providers={
-                "elevenlabs": ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key),
+                "elevenlabs": ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key, semaphore=el_sem),
                 "openai": OpenAITTSProvider(api_key=settings.openai_api_key),
             },
             clone_providers={
-                "elevenlabs": ElevenLabsCloneProvider(api_key=settings.elevenlabs_api_key),
+                "elevenlabs": ElevenLabsCloneProvider(api_key=settings.elevenlabs_api_key, semaphore=el_sem),
             },
             music_providers={
-                "elevenlabs": ElevenLabsMusicProvider(api_key=settings.elevenlabs_api_key),
-                "tempolor": TempolorMusicProvider(api_key=settings.tempolor_api_key),
+                "elevenlabs": ElevenLabsMusicProvider(api_key=settings.elevenlabs_api_key, semaphore=el_sem),
+                "tempolor": TempolorMusicProvider(api_key=settings.tempolor_api_key, semaphore=tempolor_sem),
             },
         )
 

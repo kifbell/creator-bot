@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 from elevenlabs.client import ElevenLabs
 
@@ -6,8 +7,9 @@ from bot.providers.voice_clone.base_clone import CloneResult, VoiceCloneProvider
 
 
 class ElevenLabsCloneProvider(VoiceCloneProvider):
-    def __init__(self, api_key: str) -> None:
+    def __init__(self, api_key: str, semaphore: asyncio.Semaphore | None = None) -> None:
         self._client = ElevenLabs(api_key=api_key)
+        self._semaphore = semaphore
 
     async def clone_and_speak(
         self,
@@ -35,5 +37,6 @@ class ElevenLabsCloneProvider(VoiceCloneProvider):
                 self._client.voices.delete(voice_id=voice_id)
             return audio_bytes
 
-        audio_bytes = await asyncio.to_thread(_run)
+        async with self._semaphore or contextlib.nullcontext():
+            audio_bytes = await asyncio.to_thread(_run)
         return CloneResult(audio_bytes=audio_bytes)
