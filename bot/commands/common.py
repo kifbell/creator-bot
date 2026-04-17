@@ -47,6 +47,10 @@ async def _cancel_flow(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     return ConversationHandler.END
 
 
+async def _block_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Please finish or /cancel your current task first.")
+
+
 _FALLBACK_HANDLERS = {
     FallbackAction.CANCEL_SILENT:  _cancel_flow,
     FallbackAction.CANCEL_MESSAGE: cancel,
@@ -77,6 +81,8 @@ def menu_fallbacks() -> list:
     return [
         MessageHandler(filters.Text([b.label]), _FALLBACK_HANDLERS[b.fallback])
         for b in ALL
+    ] + [
+        MessageHandler(filters.COMMAND, _block_command),
     ]
 
 
