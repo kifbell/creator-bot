@@ -248,8 +248,9 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     try:
         result = await tts.synthesize(text=text, voice_id=voice_id)
     except Exception as e:
+        await cm.refund(user_id, "speak")
         await update.message.reply_text(
-            f"❌ Speech generation failed: {e}\n\nTry again or choose a different voice.",
+            f"❌ Speech generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
         return ConversationHandler.END
@@ -299,8 +300,9 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
     try:
         result = await tts.synthesize_described(text=text, description=description)
     except Exception as e:
+        await cm.refund(user_id, "speak")
         await update.message.reply_text(
-            f"❌ Speech generation failed: {e}\n\nTry again or describe a different voice.",
+            f"❌ Speech generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
         return ConversationHandler.END

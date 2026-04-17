@@ -24,6 +24,11 @@ class CreditManager:
         cost = COSTS[feature]
         return await db.check_and_deduct_credits(user_id, cost, feature) 
 
+    async def refund(self, user_id: int, feature: str) -> int:
+        """Refund credits for a feature that couldn't be completed (e.g. timeout)."""
+        cost = COSTS[feature]
+        return await db.add_credits(user_id, cost, f"refund_{feature}")
+
     async def top_up(self, user_id: int, amount: int) -> tuple[int, int]:
         """Process payment and credit account. Returns (credits_added, new_balance)."""
         credits = await self._payment.process(user_id, amount)
