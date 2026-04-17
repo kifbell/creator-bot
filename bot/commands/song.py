@@ -62,8 +62,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         result = await music.generate(prompt=prompt)
     except Exception as e:
+        await cm.refund(user_id, "song")
         await update.message.reply_text(
-            f"❌ Generation failed: {e}\n\nTry again or switch model via ⚙️ Settings.",
+            f"❌ Generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
         return ConversationHandler.END

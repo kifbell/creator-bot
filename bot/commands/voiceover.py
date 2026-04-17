@@ -204,9 +204,10 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as e:
         if not using_saved:
             delete_temp_file(sample_path)
+        await cm.refund(user_id, "voiceover")
         context.user_data.clear()
         await update.message.reply_text(
-            f"❌ Voice cloning failed: {e}",
+            f"❌ Voice cloning failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
         return ConversationHandler.END
