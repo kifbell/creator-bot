@@ -42,7 +42,12 @@ def main() -> None:
     init_db()
     init_voices_db()
 
-    app = Application.builder().token(settings.telegram_bot_token).build()
+    app = (
+        Application.builder()
+        .token(settings.telegram_bot_token)
+        .concurrent_updates(True)
+        .build()
+    )
 
     if settings.bot_env == "test":
         logger.info("BOT_ENV=test — using stub providers (no API calls will be made)")
