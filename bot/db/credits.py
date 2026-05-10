@@ -1,6 +1,7 @@
 """SQLite persistence layer for user credits."""
 
 import asyncio
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -9,6 +10,7 @@ from bot.config import settings
 
 _DB_PATH = Path(f"data/credits_{settings.bot_env}.db")
 _lock = asyncio.Lock()
+_logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
@@ -30,6 +32,19 @@ def init_db() -> None:
                 reason     TEXT    NOT NULL,
                 created_at TEXT    NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS pending_payments (
+                payment_id  TEXT    PRIMARY KEY,
+                user_id     INTEGER NOT NULL,
+                provider    TEXT    NOT NULL,
+                amount_rub  INTEGER NOT NULL,
+                credits     INTEGER NOT NULL,
+                status      TEXT    NOT NULL,
+                created_at  TEXT    NOT NULL,
+                updated_at  TEXT    NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_payments_user
+                ON pending_payments(user_id, status);
         """)
         con.commit()
     finally:
@@ -52,22 +67,29 @@ async def get_balance(user_id: int) -> int | None:
 
 
 async def create_user(user_id: int, initial_balance: int, reason: str) -> int:
-    """Insert a new user with initial_balance. Returns final balance."""
+    """Idempotent: insert user only if not already present. Safe under concurrency.
+    Returns the user's current balance (initial_balance for new users, existing for returning)."""
     async with _lock:
         con = sqlite3.connect(_DB_PATH)
         try:
             now = _now()
-            con.execute(
-                "INSERT INTO users (user_id, balance, created_at) VALUES (?, ?, ?)",
+            cursor = con.execute(
+                "INSERT OR IGNORE INTO users (user_id, balance, created_at) VALUES (?, ?, ?)",
                 (user_id, initial_balance, now),
             )
-            if initial_balance != 0:
+            inserted = cursor.rowcount > 0
+            if inserted and initial_balance != 0:
                 con.execute(
                     "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
                     (user_id, initial_balance, reason, now),
                 )
             con.commit()
-            return initial_balance
+            row = con.execute(
+                "SELECT balance FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            if inserted:
+                _logger.info("user_created user_id=%s balance=%s", user_id, initial_balance)
+            return row[0] if row else initial_balance
         finally:
             con.close()
 
@@ -85,7 +107,10 @@ async def add_credits(user_id: int, delta: int, reason: str) -> int:
             )
             con.commit()
             row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
-            return row[0]
+            # None guard mirrors peer functions (create_user, credit_pending_payment).
+            # Currently unreachable because every caller precedes with ensure_user(),
+            # but defends against future callers that skip that step.
+            return row[0] if row else delta
         finally:
             con.close()
 
@@ -102,6 +127,10 @@ async def check_and_deduct_credits(user_id: int, amount: int, reason: str) -> bo
         try:
             row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
             if row is None or row[0] < amount:
+                _logger.info(
+                    "credit_deduct_denied user_id=%s amount=%s reason=%s balance=%s",
+                    user_id, amount, reason, row[0] if row else None,
+                )
                 return False
             now = _now()
             con.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
@@ -110,6 +139,150 @@ async def check_and_deduct_credits(user_id: int, amount: int, reason: str) -> bo
                 (user_id, -amount, reason, now),
             )
             con.commit()
+            _logger.info(
+                "credit_deducted user_id=%s amount=%s reason=%s new_balance=%s",
+                user_id, amount, reason, row[0] - amount,
+            )
             return True
+        finally:
+            con.close()
+
+
+# ── Pending payments ──────────────────────────────────────────────────
+
+async def record_pending_payment(
+    payment_id: str,
+    user_id: int,
+    provider: str,
+    amount_rub: int,
+    credits: int,
+) -> None:
+    """Insert a new pending payment row (status='pending')."""
+    async with _lock:
+        con = sqlite3.connect(_DB_PATH)
+        try:
+            now = _now()
+            con.execute(
+                "INSERT INTO pending_payments "
+                "(payment_id, user_id, provider, amount_rub, credits, status, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)",
+                (payment_id, user_id, provider, amount_rub, credits, now, now),
+            )
+            con.commit()
+            _logger.info(
+                "payment_recorded payment_id=%s user_id=%s provider=%s amount_rub=%s credits=%s",
+                payment_id, user_id, provider, amount_rub, credits,
+            )
+        finally:
+            con.close()
+
+
+async def mark_payment_status(payment_id: str, status: str) -> None:
+    """Set status to one of: 'pending' | 'succeeded' | 'canceled'.
+    Does NOT modify users.balance — use credit_pending_payment() for crediting."""
+    async with _lock:
+        con = sqlite3.connect(_DB_PATH)
+        try:
+            con.execute(
+                "UPDATE pending_payments SET status = ?, updated_at = ? WHERE payment_id = ?",
+                (status, _now(), payment_id),
+            )
+            con.commit()
+            _logger.info("payment_status_updated payment_id=%s status=%s", payment_id, status)
+        finally:
+            con.close()
+
+
+async def get_pending_payment_for_user(user_id: int) -> dict | None:
+    """Return the most recent pending payment for a user (status='pending'), or None.
+    Used by the Resume Payment UX in topup."""
+    async with _lock:
+        con = sqlite3.connect(_DB_PATH)
+        try:
+            row = con.execute(
+                "SELECT payment_id, provider, amount_rub, credits, created_at "
+                "FROM pending_payments WHERE user_id = ? AND status = 'pending' "
+                "ORDER BY created_at DESC LIMIT 1",
+                (user_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "payment_id": row[0],
+                "provider": row[1],
+                "amount_rub": row[2],
+                "credits": row[3],
+                "created_at": row[4],
+            }
+        finally:
+            con.close()
+
+
+async def get_pending_payment(payment_id: str) -> dict | None:
+    """Return a pending payment by id (any status), or None."""
+    async with _lock:
+        con = sqlite3.connect(_DB_PATH)
+        try:
+            row = con.execute(
+                "SELECT payment_id, user_id, provider, amount_rub, credits, status, created_at "
+                "FROM pending_payments WHERE payment_id = ?",
+                (payment_id,),
+            ).fetchone()
+            if row is None:
+                return None
+            return {
+                "payment_id": row[0],
+                "user_id": row[1],
+                "provider": row[2],
+                "amount_rub": row[3],
+                "credits": row[4],
+                "status": row[5],
+                "created_at": row[6],
+            }
+        finally:
+            con.close()
+
+
+async def credit_pending_payment(payment_id: str) -> tuple[bool, int]:
+    """Atomic: if pending_payments.status='succeeded', mark 'credited',
+    update users.balance, insert transactions row — all in one transaction.
+    Transaction `reason` is sourced from the row's `provider` column,
+    so Mock and YooKassa payments are recorded correctly.
+    Returns (was_credited_now, new_balance). Returns (False, 0) if not eligible."""
+    async with _lock:
+        con = sqlite3.connect(_DB_PATH)
+        try:
+            row = con.execute(
+                "SELECT user_id, credits, provider FROM pending_payments "
+                "WHERE payment_id = ? AND status = 'succeeded'",
+                (payment_id,),
+            ).fetchone()
+            if row is None:
+                return (False, 0)
+            user_id, credits, provider = row
+            now = _now()
+            reason = f"topup_{provider}"
+            con.execute(
+                "UPDATE pending_payments SET status = 'credited', updated_at = ? WHERE payment_id = ?",
+                (now, payment_id),
+            )
+            con.execute(
+                "UPDATE users SET balance = balance + ? WHERE user_id = ?",
+                (credits, user_id),
+            )
+            con.execute(
+                "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
+                (user_id, credits, reason, now),
+            )
+            con.commit()
+            new_balance_row = con.execute(
+                "SELECT balance FROM users WHERE user_id = ?", (user_id,)
+            ).fetchone()
+            new_balance = new_balance_row[0] if new_balance_row else credits
+            _logger.info(
+                "payment_credited payment_id=%s user_id=%s credits=%s provider=%s new_balance=%s",
+                payment_id, user_id, credits, provider, new_balance,
+            )
+            return (True, new_balance)
         finally:
             con.close()

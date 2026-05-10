@@ -1,4 +1,5 @@
 from bot.providers.music.base_music import MusicProvider
+from bot.providers.payment.base_payment import PaymentProvider
 from bot.providers.tts.base_tts import TTSProvider
 from bot.providers.voice_clone.base_clone import VoiceCloneProvider
 
@@ -9,10 +10,12 @@ class ProviderRegistry:
         tts_providers: dict[str, TTSProvider] | None = None,
         clone_providers: dict[str, VoiceCloneProvider] | None = None,
         music_providers: dict[str, MusicProvider] | None = None,
+        payment_providers: dict[str, PaymentProvider] | None = None,
     ) -> None:
         self._tts_providers: dict[str, TTSProvider] = tts_providers or {}
         self._clone_providers: dict[str, VoiceCloneProvider] = clone_providers or {}
         self._music_providers: dict[str, MusicProvider] = music_providers or {}
+        self._payment_providers: dict[str, PaymentProvider] = payment_providers or {}
 
     def get_tts(self, provider: str = "elevenlabs") -> TTSProvider:
         if provider not in self._tts_providers:
@@ -29,6 +32,11 @@ class ProviderRegistry:
             raise NotImplementedError(f"Music provider '{provider}' not configured.")
         return self._music_providers[provider]
 
+    def get_payment(self, provider: str = "mock") -> PaymentProvider:
+        if provider not in self._payment_providers:
+            raise NotImplementedError(f"Payment provider '{provider}' not configured.")
+        return self._payment_providers[provider]
+
     def tts_providers(self) -> list[str]:
         return list(self._tts_providers.keys())
 
@@ -37,3 +45,6 @@ class ProviderRegistry:
 
     def music_providers(self) -> list[str]:
         return list(self._music_providers.keys())
+
+    def payment_providers(self) -> list[str]:
+        return list(self._payment_providers.keys())

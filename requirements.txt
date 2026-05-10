@@ -3,5 +3,6 @@ elevenlabs==1.50.5
 httpx==0.28.1
 openai>=1.60.0
 pydantic-settings==2.8.1
+yookassa>=3.10.0
 pytest==8.3.5
 pytest-asyncio==0.26.0

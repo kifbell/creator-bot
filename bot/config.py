@@ -9,6 +9,8 @@ class Settings(BaseSettings):
     elevenlabs_api_key: str = ""
     tempolor_api_key: str = ""
     openai_api_key: str = ""
+    yookassa_shop_id: str = ""
+    yookassa_secret_key: str = ""
     bot_env: str = "prod"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
