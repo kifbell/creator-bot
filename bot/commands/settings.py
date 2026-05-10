@@ -88,7 +88,7 @@ async def model_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         parse_mode="Markdown",
         reply_markup=MAIN_MENU,
     )
-    context.user_data.pop("settings_function", None)
+    context.user_data.clear()
     return ConversationHandler.END
 
 

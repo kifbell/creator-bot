@@ -9,9 +9,8 @@ from telegram.ext import (
     Application,
     CommandHandler,
     ContextTypes,
-    MessageHandler,
+    PersistenceInput,
     PicklePersistence,
-    filters,
 )
 
 from bot.commands.common import cancel, help_command, start
@@ -55,6 +54,11 @@ async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     error logger and never surface in our bot.log."""
     logger.error("unhandled_exception", exc_info=context.error)
     if isinstance(update, Update) and update.effective_message:
+        # Reset ephemeral conversation state so a future restart can't resurrect
+        # a half-completed flow (e.g. stale voice_id / sample_path) via the
+        # PicklePersistence snapshot.
+        if context.user_data is not None:
+            context.user_data.clear()
         try:
             await update.effective_message.reply_text(
                 "⚠️ Something went wrong. Please try again or tap /cancel."
@@ -69,11 +73,10 @@ def main() -> None:
     init_voices_db()
     init_preferences_db()
 
-    # PicklePersistence saves user_data, chat_data, bot_data, and ConversationHandler
-    # state to disk after every update. On restart, the new process loads everything
-    # back — users in the middle of /speak, /topup, etc. resume seamlessly without
-    # losing their voice selection, payment_id, idempotency keys, or re-entry guard.
-    persistence = PicklePersistence(filepath="data/persistence.pickle")
+    persistence = PicklePersistence(
+        filepath="data/persistence.pickle",
+        store_data=PersistenceInput(bot_data=False),
+    )
 
     app = (
         Application.builder()

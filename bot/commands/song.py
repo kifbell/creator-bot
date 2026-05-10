@@ -52,6 +52,9 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
             reply_markup=MAIN_MENU,
         )
+        # Clear ephemeral keys so a future restart can't restore this
+        # conversation with stale state.
+        context.user_data.clear()
         return ConversationHandler.END
 
     await update.message.reply_text("Generating… this may take up to a minute ⏳")
@@ -68,6 +71,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             f"❌ Generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
+        context.user_data.clear()
         return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)

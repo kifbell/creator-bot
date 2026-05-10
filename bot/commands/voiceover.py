@@ -176,6 +176,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     if not sample_path:
         await update.message.reply_text("Something went wrong. Please start again with /voiceover.")
+        context.user_data.clear()
         return ConversationHandler.END
 
     # Restart-safety: if the local file vanished (e.g. system reboot wiped /tmp/),
@@ -204,6 +205,9 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
             reply_markup=MAIN_MENU,
         )
+        # Clear sample_path/sample_file_id so a future restart can't restore
+        # WAITING_TEXT state pointing at an unrelated old sample.
+        context.user_data.clear()
         return ConversationHandler.END
 
     await update.message.reply_text("Cloning voice and generating audio…")

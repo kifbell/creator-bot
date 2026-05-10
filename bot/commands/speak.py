@@ -229,6 +229,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     if not voice_id:
         await update.message.reply_text("Something went wrong. Please start again with /speak.")
+        context.user_data.clear()
         return ConversationHandler.END
 
     user_id = update.message.from_user.id
@@ -241,6 +242,9 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
             reply_markup=MAIN_MENU,
         )
+        # Clear voice selection / description so a future restart can't
+        # restore the in-flight state with stale references.
+        context.user_data.clear()
         return ConversationHandler.END
 
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
@@ -255,6 +259,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             f"❌ Speech generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
+        context.user_data.clear()
         return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)
@@ -281,6 +286,7 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
 
     if not description:
         await update.message.reply_text("Something went wrong. Please start again with /speak.")
+        context.user_data.clear()
         return ConversationHandler.END
 
     user_id = update.message.from_user.id
@@ -293,6 +299,9 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
             reply_markup=MAIN_MENU,
         )
+        # Clear voice selection / description so a future restart can't
+        # restore the in-flight state with stale references.
+        context.user_data.clear()
         return ConversationHandler.END
 
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
@@ -307,6 +316,7 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
             f"❌ Speech generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
         )
+        context.user_data.clear()
         return ConversationHandler.END
 
     audio_file = io.BytesIO(result.audio_bytes)
