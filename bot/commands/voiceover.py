@@ -23,7 +23,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.commands.common import BTN_VOICEOVER, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
+from bot.commands.common import BTN_VOICEOVER, MAIN_MENU, USER_TEXT, cancel, get_provider, menu_fallbacks
 from bot.credits.manager import CreditManager
 from bot.db.voices import delete_voice_sample, list_voice_samples, save_voice_sample
 from bot.registry import ProviderRegistry
@@ -189,7 +189,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 
     registry: ProviderRegistry = context.bot_data["registry"]
     clone_provider = registry.get_voice_clone(
-        provider=context.user_data.get("voiceover_provider", "elevenlabs")
+        provider=await get_provider(context, user_id, "voiceover_provider", "elevenlabs")
     )
 
     voice_name = f"ivc_{update.message.from_user.id}"

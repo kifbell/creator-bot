@@ -79,6 +79,10 @@ async def model_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     provider_key = _MODEL_TO_PROVIDER[model]
     context.user_data[setting_key] = provider_key
 
+    from bot.db.preferences import set_preference
+    user_id = update.message.from_user.id
+    await set_preference(user_id, setting_key, provider_key)
+
     await update.message.reply_text(
         f"✅ *{fn}* will now use *{model}*.",
         parse_mode="Markdown",

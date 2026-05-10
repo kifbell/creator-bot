@@ -25,7 +25,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.commands.common import BTN_SPEAK, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
+from bot.commands.common import BTN_SPEAK, MAIN_MENU, USER_TEXT, cancel, get_provider, menu_fallbacks
 from bot.credits.manager import CreditManager
 from bot.db.voices import (
     delete_voice_description,
@@ -74,7 +74,8 @@ _YES_NO_KB = ReplyKeyboardMarkup(
 
 async def speak_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     registry: ProviderRegistry = context.bot_data["registry"]
-    provider = context.user_data.get("tts_provider", "elevenlabs")
+    user_id = update.message.from_user.id
+    provider = await get_provider(context, user_id, "tts_provider", "elevenlabs")
     tts = registry.get_tts(provider=provider)
 
     cache_key = f"{_VOICES_CACHE_KEY}_{provider}"
@@ -141,7 +142,8 @@ async def voice_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         return CHOOSING_SAVED_DESCRIPTION
 
-    provider = context.user_data.get("tts_provider", "elevenlabs")
+    user_id = update.message.from_user.id
+    provider = await get_provider(context, user_id, "tts_provider", "elevenlabs")
     voices = context.bot_data.get(f"{_VOICES_CACHE_KEY}_{provider}", [])
     voice = next((v for v in voices if v.name == text), None)
 
@@ -244,7 +246,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts(provider=context.user_data.get("tts_provider", "elevenlabs"))
+    tts = registry.get_tts(provider=await get_provider(context, user_id, "tts_provider", "elevenlabs"))
     try:
         result = await tts.synthesize(text=text, voice_id=voice_id)
     except Exception as e:
@@ -296,7 +298,7 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts(provider=context.user_data.get("tts_provider", "elevenlabs"))
+    tts = registry.get_tts(provider=await get_provider(context, user_id, "tts_provider", "elevenlabs"))
     try:
         result = await tts.synthesize_described(text=text, description=description)
     except Exception as e:

@@ -86,6 +86,17 @@ def menu_fallbacks() -> list:
     ]
 
 
+# ── Provider preference helper ───────────────────────────────────────────────
+
+async def get_provider(context: ContextTypes.DEFAULT_TYPE, user_id: int, key: str, default: str) -> str:
+    """Load provider preference from DB (cached in user_data)."""
+    if key not in context.user_data:
+        from bot.db.preferences import get_preference
+        val = await get_preference(user_id, key)
+        context.user_data[key] = val or default
+    return context.user_data[key]
+
+
 # ── Standalone command handlers ───────────────────────────────────────────────
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:

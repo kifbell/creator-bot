@@ -17,7 +17,7 @@ from telegram.ext import (
     filters,
 )
 
-from bot.commands.common import BTN_SONG, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
+from bot.commands.common import BTN_SONG, MAIN_MENU, USER_TEXT, cancel, get_provider, menu_fallbacks
 from bot.credits.manager import CreditManager
 from bot.registry import ProviderRegistry
 
@@ -27,7 +27,8 @@ _DEFAULT_PROVIDER = "tempolor"
 
 
 async def song_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    provider = context.user_data.get("music_provider", _DEFAULT_PROVIDER)
+    user_id = update.message.from_user.id
+    provider = await get_provider(context, user_id, "music_provider", _DEFAULT_PROVIDER)
     await update.message.reply_text(
         f"🎵 Describe the music you want:\n\n"
         f"_e.g. upbeat electronic pop, cinematic orchestral, lo-fi hip hop_\n\n"
@@ -39,9 +40,9 @@ async def song_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     prompt = update.message.text.strip()
-    provider = context.user_data.get("music_provider", _DEFAULT_PROVIDER)
 
     user_id = update.message.from_user.id
+    provider = await get_provider(context, user_id, "music_provider", _DEFAULT_PROVIDER)
     cm: CreditManager = context.bot_data["credit_manager"]
     await cm.ensure_user(user_id)
 
