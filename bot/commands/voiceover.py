@@ -11,6 +11,7 @@ State range: 10–19
 """
 
 import io
+import os
 import sqlite3
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
@@ -159,6 +160,9 @@ async def receive_sample(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = message.from_user.id
     sample_path = await download_telegram_audio(bot=context.bot, file_id=file_id, user_id=user_id)
     context.user_data["sample_path"] = sample_path
+    # Also remember the Telegram file_id so we can re-download after a system
+    # reboot wipes /tmp/. Telegram retains the file for ~24h.
+    context.user_data["sample_file_id"] = file_id
 
     await message.reply_text("Got it! Now send the text to speak in that voice.")
     return WAITING_TEXT
@@ -167,12 +171,30 @@ async def receive_sample(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     sample_path = context.user_data.get("sample_path")
+    sample_file_id = context.user_data.get("sample_file_id")
+    user_id = update.message.from_user.id
 
     if not sample_path:
         await update.message.reply_text("Something went wrong. Please start again with /voiceover.")
         return ConversationHandler.END
 
-    user_id = update.message.from_user.id
+    # Restart-safety: if the local file vanished (e.g. system reboot wiped /tmp/),
+    # re-download from Telegram using the persisted file_id. Only applies to the
+    # new-sample flow — saved samples in data/voices/ are expected to be durable.
+    if not os.path.exists(sample_path):
+        if sample_file_id:
+            sample_path = await download_telegram_audio(
+                bot=context.bot, file_id=sample_file_id, user_id=user_id
+            )
+            context.user_data["sample_path"] = sample_path
+        else:
+            await update.message.reply_text(
+                "❌ The voice sample is no longer available. Please start again with /voiceover.",
+                reply_markup=MAIN_MENU,
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+
     cm: CreditManager = context.bot_data["credit_manager"]
     await cm.ensure_user(user_id)
 
@@ -307,4 +329,6 @@ def build_voiceover_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
+        persistent=True,
+        name="voiceover",
     )

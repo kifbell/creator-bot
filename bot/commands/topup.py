@@ -396,4 +396,6 @@ def build_topup_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", topup_cancel), *menu_fallbacks()],
         per_message=False,
+        persistent=True,
+        name="topup",
     )

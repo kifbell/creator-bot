@@ -93,4 +93,6 @@ def build_song_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
+        persistent=True,
+        name="song",
     )

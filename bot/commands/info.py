@@ -113,4 +113,6 @@ def build_info_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
+        persistent=True,
+        name="info",
     )

@@ -104,4 +104,6 @@ def build_settings_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
+        persistent=True,
+        name="settings",
     )

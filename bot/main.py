@@ -5,7 +5,14 @@ import logging
 from logging.handlers import RotatingFileHandler
 
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    PicklePersistence,
+    filters,
+)
 
 from bot.commands.common import cancel, help_command, start
 from bot.commands.info import build_info_handler
@@ -62,10 +69,17 @@ def main() -> None:
     init_voices_db()
     init_preferences_db()
 
+    # PicklePersistence saves user_data, chat_data, bot_data, and ConversationHandler
+    # state to disk after every update. On restart, the new process loads everything
+    # back — users in the middle of /speak, /topup, etc. resume seamlessly without
+    # losing their voice selection, payment_id, idempotency keys, or re-entry guard.
+    persistence = PicklePersistence(filepath="data/persistence.pickle")
+
     app = (
         Application.builder()
         .token(settings.telegram_bot_token)
         .concurrent_updates(True)
+        .persistence(persistence)
         .build()
     )
 
@@ -133,7 +147,7 @@ def main() -> None:
     app.add_error_handler(_on_error)
 
     logger.info("Bot starting…")
-    app.run_polling(drop_pending_updates=True)
+    app.run_polling()
 
 
 if __name__ == "__main__":

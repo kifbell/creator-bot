@@ -390,4 +390,6 @@ def build_speak_handler() -> ConversationHandler:
         },
         fallbacks=[CommandHandler("cancel", cancel), *menu_fallbacks()],
         per_message=False,
+        persistent=True,
+        name="speak",
     )
