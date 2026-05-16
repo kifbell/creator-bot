@@ -11,8 +11,10 @@ State range: 10–19
 """
 
 import io
+import logging
 import os
 import sqlite3
+import time
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatAction
@@ -29,6 +31,8 @@ from bot.credits.manager import CreditManager
 from bot.db.voices import delete_voice_sample, list_voice_samples, save_voice_sample
 from bot.registry import ProviderRegistry
 from bot.utils.audio import delete_temp_file, download_telegram_audio, persist_voice_sample
+
+logger = logging.getLogger(__name__)
 
 WAITING_SAMPLE = 10
 WAITING_TEXT = 11
@@ -160,8 +164,10 @@ async def receive_sample(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user_id = message.from_user.id
     sample_path = await download_telegram_audio(bot=context.bot, file_id=file_id, user_id=user_id)
     context.user_data["sample_path"] = sample_path
-    # Also remember the Telegram file_id so we can re-download after a system
-    # reboot wipes /tmp/. Telegram retains the file for ~24h.
+    # Persist the Telegram file_id as a backup recovery path. Samples are now
+    # stored under data/voices/uploads/ which survives reboots, but the file_id
+    # still lets us re-download if the on-disk file is deleted out of band
+    # (e.g. manual cleanup). Telegram retains the file for ~24h.
     context.user_data["sample_file_id"] = file_id
 
     await message.reply_text("Got it! Now send the text to speak in that voice.")
@@ -179,9 +185,10 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data.clear()
         return ConversationHandler.END
 
-    # Restart-safety: if the local file vanished (e.g. system reboot wiped /tmp/),
-    # re-download from Telegram using the persisted file_id. Only applies to the
-    # new-sample flow — saved samples in data/voices/ are expected to be durable.
+    # Restart-safety: if the local file vanished (e.g. manual cleanup of
+    # data/voices/uploads/), re-download from Telegram using the persisted
+    # file_id. Only applies to the new-sample flow — saved samples in
+    # data/voices/{user_id}/ are expected to be durable.
     if not os.path.exists(sample_path):
         if sample_file_id:
             sample_path = await download_telegram_audio(
@@ -214,13 +221,13 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    clone_provider = registry.get_voice_clone(
-        provider=await get_provider(context, user_id, "voiceover_provider", "elevenlabs")
-    )
+    provider_name = await get_provider(context, user_id, "voiceover_provider", "elevenlabs")
+    clone_provider = registry.get_voice_clone(provider=provider_name)
 
     voice_name = f"ivc_{update.message.from_user.id}"
     using_saved = context.user_data.get("_using_saved_sample", False)
 
+    _t0 = time.perf_counter()
     try:
         result = await clone_provider.clone_and_speak(
             sample_path=sample_path,
@@ -237,6 +244,10 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
             reply_markup=MAIN_MENU,
         )
         return ConversationHandler.END
+    logger.info(
+        "gen_completed command=voiceover provider=%s duration=%.3f text_len=%d",
+        provider_name, time.perf_counter() - _t0, len(text),
+    )
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "voiceover.mp3"

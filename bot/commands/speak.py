@@ -13,7 +13,9 @@ State range: 0–9
 """
 
 import io
+import logging
 import sqlite3
+import time
 
 from telegram import KeyboardButton, ReplyKeyboardMarkup, ReplyKeyboardRemove, Update
 from telegram.constants import ChatAction
@@ -33,6 +35,8 @@ from bot.db.voices import (
     save_voice_description,
 )
 from bot.registry import ProviderRegistry
+
+logger = logging.getLogger(__name__)
 
 CHOOSING_VOICE = 0
 TYPING_TEXT = 1
@@ -250,7 +254,9 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts(provider=await get_provider(context, user_id, "tts_provider", "elevenlabs"))
+    provider_name = await get_provider(context, user_id, "tts_provider", "elevenlabs")
+    tts = registry.get_tts(provider=provider_name)
+    _t0 = time.perf_counter()
     try:
         result = await tts.synthesize(text=text, voice_id=voice_id)
     except Exception as e:
@@ -261,6 +267,10 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         )
         context.user_data.clear()
         return ConversationHandler.END
+    logger.info(
+        "gen_completed command=speak mode=preset provider=%s duration=%.3f text_len=%d",
+        provider_name, time.perf_counter() - _t0, len(text),
+    )
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"
@@ -307,7 +317,9 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    tts = registry.get_tts(provider=await get_provider(context, user_id, "tts_provider", "elevenlabs"))
+    provider_name = await get_provider(context, user_id, "tts_provider", "elevenlabs")
+    tts = registry.get_tts(provider=provider_name)
+    _t0 = time.perf_counter()
     try:
         result = await tts.synthesize_described(text=text, description=description)
     except Exception as e:
@@ -318,6 +330,10 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
         )
         context.user_data.clear()
         return ConversationHandler.END
+    logger.info(
+        "gen_completed command=speak mode=described provider=%s duration=%.3f text_len=%d",
+        provider_name, time.perf_counter() - _t0, len(text),
+    )
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"

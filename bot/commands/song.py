@@ -6,6 +6,8 @@ State range: 20–29
 """
 
 import io
+import logging
+import time
 
 from telegram import Update
 from telegram.constants import ChatAction
@@ -20,6 +22,8 @@ from telegram.ext import (
 from bot.commands.common import BTN_SONG, MAIN_MENU, USER_TEXT, cancel, get_provider, menu_fallbacks
 from bot.credits.manager import CreditManager
 from bot.registry import ProviderRegistry
+
+logger = logging.getLogger(__name__)
 
 TYPING_PROMPT = 20
 
@@ -63,6 +67,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     registry: ProviderRegistry = context.bot_data["registry"]
     music = registry.get_music(provider=provider)
 
+    _t0 = time.perf_counter()
     try:
         result = await music.generate(prompt=prompt)
     except Exception as e:
@@ -73,6 +78,10 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
         context.user_data.clear()
         return ConversationHandler.END
+    logger.info(
+        "gen_completed command=song provider=%s duration=%.3f prompt_len=%d",
+        provider, time.perf_counter() - _t0, len(prompt),
+    )
 
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "song.mp3"
