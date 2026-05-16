@@ -1,5 +1,5 @@
 """
-/topup command — credit top-up flow with Mock and YooKassa providers.
+/topup command — credit top-up flow via YooKassa.
 
 State range: 40-49
   CHOOSING_METHOD  = 40
@@ -34,14 +34,13 @@ WAITING_PAYMENT = 42
 # Payment-flow button labels — kept distinct from MAIN_MENU labels.
 # DO NOT add these to bot/commands/buttons.py:ALL — that would make USER_TEXT
 # exclude them and the state handlers would never see the taps.
-_BTN_MOCK = "🔧 Mock (test)"
 _BTN_YOOKASSA = "💳 YooKassa"
 _BTN_RESUME = "✅ Resume"
 _BTN_NEW = "🆕 New payment"
 _BTN_ABANDON = "🛑 Abandon"
 _BTN_CHECK = "✅ Check payment"
 
-_PROVIDER_LABEL_TO_KEY = {_BTN_MOCK: "mock", _BTN_YOOKASSA: "yookassa"}
+_PROVIDER_LABEL_TO_KEY = {_BTN_YOOKASSA: "yookassa"}
 _GUARD_KEY = "topup_in_progress"
 _PAYMENT_LINK_TTL_HOURS = 24
 
@@ -144,8 +143,6 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     registry: ProviderRegistry = context.bot_data["registry"]
     available = registry.payment_providers()
     rows = []
-    if "mock" in available:
-        rows.append([KeyboardButton(_BTN_MOCK)])
     if "yookassa" in available:
         rows.append([KeyboardButton(_BTN_YOOKASSA)])
 
@@ -235,10 +232,6 @@ async def amount_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
     context.user_data["payment_id"] = payment_id
     credits = credits_for_rub(amount_rub)
-
-    # Mock has empty URL → confirm immediately.
-    if not url:
-        return await _confirm_payment(update, context)
 
     await update.message.reply_text(
         f"💳 Payment created: *{amount_rub} ₽ → {credits} credits*\n\n"

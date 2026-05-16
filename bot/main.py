@@ -25,7 +25,6 @@ from bot.credits.manager import CreditManager
 from bot.db.credits import init_db
 from bot.db.preferences import init_preferences_db
 from bot.db.voices import init_voices_db
-from bot.providers.payment.mock_payment import MockPaymentProvider
 from bot.providers.payment.yookassa_payment import YooKassaPaymentProvider
 from bot.providers.music.elevenlabs_music import ElevenLabsMusicProvider
 from bot.providers.music.tempolor_music import TempolorMusicProvider
@@ -86,8 +85,9 @@ def main() -> None:
         .build()
     )
 
-    # Payment providers: Mock works everywhere (for testing); YooKassa requires creds.
-    payment_providers = {"mock": MockPaymentProvider()}
+    # Payment providers: YooKassa is the only supported acquirer.
+    # If credentials are absent /topup will report "no payment methods configured".
+    payment_providers: dict = {}
     if settings.yookassa_shop_id and settings.yookassa_secret_key:
         from yookassa import Configuration
         Configuration.account_id = settings.yookassa_shop_id
@@ -95,7 +95,7 @@ def main() -> None:
         payment_providers["yookassa"] = YooKassaPaymentProvider()
         logger.info("YooKassa payment provider enabled")
     else:
-        logger.info("YooKassa credentials not set — only Mock payment available")
+        logger.info("YooKassa credentials not set — /topup will be unavailable")
 
     if settings.bot_env == "test":
         logger.info("BOT_ENV=test — using stub providers (no API calls will be made)")

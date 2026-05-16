@@ -32,7 +32,7 @@ class ProviderRegistry:
             raise NotImplementedError(f"Music provider '{provider}' not configured.")
         return self._music_providers[provider]
 
-    def get_payment(self, provider: str = "mock") -> PaymentProvider:
+    def get_payment(self, provider: str = "yookassa") -> PaymentProvider:
         if provider not in self._payment_providers:
             raise NotImplementedError(f"Payment provider '{provider}' not configured.")
         return self._payment_providers[provider]
