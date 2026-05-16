@@ -5,15 +5,20 @@ from pathlib import Path
 
 from telegram import Bot
 
+UPLOAD_DIR = Path("data/voices/uploads")
+
 
 async def download_telegram_audio(bot: Bot, file_id: str, user_id: int) -> str:
-    """Download a Telegram audio/voice file and save it to a temp path.
+    """Download a Telegram audio/voice file to the persistent upload directory.
 
-    Returns the local file path. Caller is responsible for deleting the file.
+    Uses data/voices/uploads/ (not /tmp/) so the file survives a host reboot
+    between the upload step and the synthesis step of /voiceover.
+    Caller is responsible for deleting the file.
     """
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     tg_file = await bot.get_file(file_id)
     suffix = os.path.splitext(tg_file.file_path or "audio.ogg")[1] or ".ogg"
-    local_path = f"/tmp/{user_id}_{uuid.uuid4().hex}{suffix}"
+    local_path = str(UPLOAD_DIR / f"{user_id}_{uuid.uuid4().hex}{suffix}")
     await tg_file.download_to_drive(local_path)
     return local_path
 
