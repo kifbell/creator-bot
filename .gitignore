@@ -19,3 +19,16 @@ data/
 deploy/inventory.ini
 yoo_kassa_test_key
 tem.ipynb
+
+# Master's thesis LaTeX source — kept on disk but not version controlled here
+Term-Paper-LaTeX-Template-DSBA-master/
+
+# LaTeX intermediates (per-compile artefacts)
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.toc
+*.synctex.gz
