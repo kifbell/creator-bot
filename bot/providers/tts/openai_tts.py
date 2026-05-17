@@ -1,3 +1,12 @@
+"""OpenAI TTS provider — Mode B (input_length self-metering).
+
+OpenAI gpt-4o-mini-tts does not expose per-call usage on the synthesis
+response. We meter on input characters; `credits_per_input_unit` in
+`pricing.json` is set generously to cover the unknown output-audio-token
+cost component, and calibrated down over time via the SQL calibration
+loop documented in UNIFIED_PRICING_PLAN.md §10.
+"""
+
 import asyncio
 
 from openai import OpenAI
@@ -26,7 +35,8 @@ class OpenAITTSProvider(TTSProvider):
                 return response.read()
 
         audio_bytes = await asyncio.to_thread(_synth)
-        return TTSResult(audio_bytes=audio_bytes)
+        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
+        return TTSResult(audio_bytes=audio_bytes, usage=usage)
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
         def _synth():
@@ -39,4 +49,5 @@ class OpenAITTSProvider(TTSProvider):
                 return response.read()
 
         audio_bytes = await asyncio.to_thread(_synth)
-        return TTSResult(audio_bytes=audio_bytes)
+        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
+        return TTSResult(audio_bytes=audio_bytes, usage=usage)

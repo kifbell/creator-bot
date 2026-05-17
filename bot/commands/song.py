@@ -50,7 +50,25 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     cm: CreditManager = context.bot_data["credit_manager"]
     await cm.ensure_user(user_id)
 
-    if not await cm.check_and_deduct(user_id, "song"):
+    if not prompt:
+        await update.message.reply_text(
+            "❌ Please type a prompt.", reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # Length cap from pricing config — bound worst-case cost
+    max_len = cm.cfg.max_length.get("song", 60)
+    if len(prompt) > max_len:
+        await update.message.reply_text(
+            f"❌ Prompt too long ({len(prompt)} chars). Max is {max_len}.",
+            reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    ok, ctx_call = await cm.pre_deduct(user_id, "song", provider)
+    if not ok:
         bal = await cm.get_balance(user_id)
         await update.message.reply_text(
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
@@ -71,7 +89,7 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         result = await music.generate(prompt=prompt)
     except Exception as e:
-        await cm.refund(user_id, "song")
+        await cm.refund_minimum(ctx_call)
         await update.message.reply_text(
             f"❌ Generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
@@ -83,11 +101,21 @@ async def receive_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         provider, time.perf_counter() - _t0, len(prompt),
     )
 
+    try:
+        settle = await cm.reconcile(ctx_call, result.usage)
+        cost_prefix = "Cost" if ctx_call.mode == "vendor" else "~Cost"
+        cost_line = f"{cost_prefix}: {settle.actual_credits} credits. Balance: {settle.new_balance}."
+    except Exception as e:
+        logger.error("pricing_reconcile_failed call_id=%s err=%r", ctx_call.call_id, e)
+        bal = await cm.get_balance(user_id)
+        cost_line = f"Cost: {ctx_call.minimum} credits. Balance: {bal}."
+
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "song.mp3"
     await update.message.reply_audio(
         audio=audio_file,
         title=prompt[:64],
+        caption=cost_line,
         reply_markup=MAIN_MENU,
     )
 

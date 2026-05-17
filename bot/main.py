@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
 from telegram import Update
 from telegram.ext import (
@@ -22,6 +23,7 @@ from bot.commands.topup import build_topup_handler
 from bot.commands.voiceover import build_voiceover_handler
 from bot.config import settings
 from bot.credits.manager import CreditManager
+from bot.credits.pricing_schema import PricingConfig, load as load_pricing
 from bot.db.credits import init_db
 from bot.db.preferences import init_preferences_db
 from bot.db.voices import init_voices_db
@@ -67,10 +69,38 @@ async def _on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
             pass
 
 
+def _load_pricing_config() -> PricingConfig:
+    """Load pricing config; in test mode, fall back to pricing.test.json if
+    the override path is missing. In prod, fail loud."""
+    if settings.pricing_config_path:
+        path = Path(settings.pricing_config_path)
+    elif settings.bot_env == "test":
+        path = Path("config/pricing.test.json")
+    else:
+        path = Path("config/pricing.json")
+
+    if not path.exists() and settings.bot_env == "test":
+        # Bootstrap helper: prefer the bundled test config if the override
+        # disappeared. Prod gets no such fallback — it crashes.
+        path = Path("config/pricing.test.json")
+
+    cfg = load_pricing(path)
+    logger.info(
+        "pricing_rate_config_loaded config_hash=%s providers=%s mode_vendor=%s mode_input_length=%s",
+        cfg.config_hash,
+        sorted(cfg.providers.keys()),
+        sorted(k for k, p in cfg.providers.items() if p.mode == "vendor"),
+        sorted(k for k, p in cfg.providers.items() if p.mode == "input_length"),
+    )
+    return cfg
+
+
 def main() -> None:
     init_db()
     init_voices_db()
     init_preferences_db()
+
+    pricing = _load_pricing_config()
 
     persistence = PicklePersistence(
         filepath="data/persistence.pickle",
@@ -133,7 +163,7 @@ def main() -> None:
         )
 
     app.bot_data["registry"] = registry
-    app.bot_data["credit_manager"] = CreditManager()
+    app.bot_data["credit_manager"] = CreditManager(pricing)
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("help", help_command))

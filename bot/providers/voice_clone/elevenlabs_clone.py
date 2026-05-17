@@ -1,8 +1,15 @@
+"""ElevenLabs Instant Voice Clone provider — Mode A (vendor-metered).
+
+After synthesis we query the History endpoint to obtain the exact char
+count billed. Ephemeral voice cleanup happens regardless of metering.
+"""
+
 import asyncio
 import contextlib
 
 from elevenlabs.client import ElevenLabs
 
+from bot.providers.tts.elevenlabs_tts import _meter_via_history
 from bot.providers.voice_clone.base_clone import CloneResult, VoiceCloneProvider
 
 
@@ -32,11 +39,14 @@ class ElevenLabsCloneProvider(VoiceCloneProvider):
                     model_id="eleven_multilingual_v2",
                 )
                 audio_bytes = b"".join(audio_gen)
+                meter = _meter_via_history(self._client)
             finally:
                 # Always clean up — free accounts have a voice slot limit
                 self._client.voices.delete(voice_id=voice_id)
-            return audio_bytes
+            return audio_bytes, meter
 
         async with self._semaphore or contextlib.nullcontext():
-            audio_bytes = await asyncio.to_thread(_run)
-        return CloneResult(audio_bytes=audio_bytes)
+            audio_bytes, (source, units) = await asyncio.to_thread(_run)
+
+        usage = {"mode": "vendor", "units": int(units), "source": source}
+        return CloneResult(audio_bytes=audio_bytes, usage=usage)

@@ -16,7 +16,8 @@ _logger = logging.getLogger(__name__)
 
 
 def init_db() -> None:
-    """Create tables if they don't exist. Called once on startup."""
+    """Create tables if they don't exist. Called once on startup.
+    Idempotent ALTER for new `meta` column and unique index on `reason`."""
     _DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     with closing(sqlite3.connect(_DB_PATH)) as con:
         con.executescript("""
@@ -47,6 +48,34 @@ def init_db() -> None:
             CREATE INDEX IF NOT EXISTS idx_payments_user
                 ON pending_payments(user_id, status);
         """)
+        # Idempotent ALTER for the meta column (SQLite has no IF NOT EXISTS
+        # for ADD COLUMN — catch the duplicate-column error instead).
+        try:
+            con.execute("ALTER TABLE transactions ADD COLUMN meta TEXT")
+        except sqlite3.OperationalError as e:
+            if "duplicate column" not in str(e).lower():
+                raise
+        # Partial UNIQUE index on the new pricing-flow reasons only.
+        # Why partial: legacy rows have non-unique reasons (every user's
+        # /speak wrote reason='speak'; old `topup_yookassa` rows have no
+        # payment_id suffix), so a global UNIQUE index would fail to
+        # create on any existing prod DB. The new pricing flow embeds a
+        # uuid4 call_id in every relevant reason, making uniqueness
+        # achievable within the filtered subset.
+        # Topup is deliberately excluded: legacy `topup_<provider>` rows
+        # are duplicated, and idempotency for new topups is already
+        # enforced by `pending_payments.payment_id` (PK) plus the
+        # status='succeeded'→'credited' transition in credit_pending_payment.
+        # Effect: a duplicate pre:{call_id} insert raises IntegrityError,
+        # making pre_deduct retries idempotent at the DB level.
+        con.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_tx_reason_unique "
+            "ON transactions(reason) "
+            "WHERE reason LIKE 'pre:%' "
+            "OR reason LIKE 'refund:%' "
+            "OR reason LIKE 'reconcile_overage:%' "
+            "OR reason LIKE 'reconcile_refund:%'"
+        )
         con.commit()
 
 
@@ -85,14 +114,21 @@ async def create_user(user_id: int, initial_balance: int, reason: str) -> int:
         return row[0] if row else initial_balance
 
 
-async def add_credits(user_id: int, delta: int, reason: str) -> int:
-    """Add delta credits to user and log transaction. Returns new balance."""
+async def add_credits(
+    user_id: int, delta: int, reason: str, meta: str | None = None,
+) -> int:
+    """Add delta credits to user and log transaction. Returns new balance.
+
+    `meta` is an optional JSON string stored on the transaction row, used
+    by the pricing system to record the rate snapshot per call.
+    """
     async with connect(_DB_PATH, _lock) as con:
         now = _now()
         con.execute("UPDATE users SET balance = balance + ? WHERE user_id = ?", (delta, user_id))
         con.execute(
-            "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, delta, reason, now),
+            "INSERT INTO transactions (user_id, delta, reason, created_at, meta) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, delta, reason, now, meta),
         )
         con.commit()
         row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
@@ -107,8 +143,13 @@ async def deduct_credits(user_id: int, delta: int, reason: str) -> int:
     return await add_credits(user_id, -delta, reason)
 
 
-async def check_and_deduct_credits(user_id: int, amount: int, reason: str) -> bool:
-    """Atomically check balance and deduct. Returns False if insufficient funds."""
+async def check_and_deduct_credits(
+    user_id: int, amount: int, reason: str, meta: str | None = None,
+) -> bool:
+    """Atomically check balance and deduct. Returns False if insufficient funds.
+
+    `meta` is an optional JSON string stored on the transaction row.
+    """
     async with connect(_DB_PATH, _lock) as con:
         row = con.execute("SELECT balance FROM users WHERE user_id = ?", (user_id,)).fetchone()
         if row is None or row[0] < amount:
@@ -120,8 +161,9 @@ async def check_and_deduct_credits(user_id: int, amount: int, reason: str) -> bo
         now = _now()
         con.execute("UPDATE users SET balance = balance - ? WHERE user_id = ?", (amount, user_id))
         con.execute(
-            "INSERT INTO transactions (user_id, delta, reason, created_at) VALUES (?, ?, ?, ?)",
-            (user_id, -amount, reason, now),
+            "INSERT INTO transactions (user_id, delta, reason, created_at, meta) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (user_id, -amount, reason, now, meta),
         )
         con.commit()
         _logger.info(
@@ -226,7 +268,7 @@ async def credit_pending_payment(payment_id: str) -> tuple[bool, int]:
             return (False, 0)
         user_id, credits, provider = row
         now = _now()
-        reason = f"topup_{provider}"
+        reason = f"topup_{provider}_{payment_id}"
         con.execute(
             "UPDATE pending_payments SET status = 'credited', updated_at = ? WHERE payment_id = ?",
             (now, payment_id),

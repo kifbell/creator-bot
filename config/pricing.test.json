@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "rub_to_credits": 10,
+  "providers": {
+    "elevenlabs": {
+      "mode": "vendor",
+      "multiplier": 1.01,
+      "pre_deduct_minimum_credits": 1,
+      "feature_minimums": {
+        "speak": 1,
+        "voiceover": 1,
+        "song": 1
+      }
+    },
+    "openai": {
+      "mode": "input_length",
+      "multiplier": 1.01,
+      "credits_per_input_unit": 0.001,
+      "input_unit": "char",
+      "pre_deduct_minimum_credits": 1,
+      "feature_minimums": {
+        "speak": 1
+      }
+    },
+    "tempolor": {
+      "mode": "input_length",
+      "multiplier": 1.01,
+      "credits_per_input_unit": 0.01,
+      "input_unit": "char",
+      "pre_deduct_minimum_credits": 1,
+      "feature_minimums": {
+        "song": 1
+      }
+    },
+    "yookassa": {
+      "mode": "payment",
+      "multiplier": 1.0
+    }
+  },
+  "max_length": {
+    "speak": 5000,
+    "voiceover": 5000,
+    "song": 60
+  },
+  "welcome_bonus": 100,
+  "topup_buttons": [100, 500, 1000, 5000]
+}

@@ -4,4 +4,5 @@ from bot.providers.music.base_music import MusicProvider, MusicResult
 
 class StubMusicProvider(MusicProvider):
     async def generate(self, prompt: str) -> MusicResult:
-        return MusicResult(audio_bytes=SILENT_MP3)
+        usage = {"mode": "input_length", "units": len(prompt), "source": "input_length"}
+        return MusicResult(audio_bytes=SILENT_MP3, usage=usage)

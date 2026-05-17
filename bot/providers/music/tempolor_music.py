@@ -1,3 +1,10 @@
+"""Tempolor music provider — Mode B (input_length self-metering).
+
+Tempolor's response doesn't include a per-call invoice, so we meter on
+`len(prompt)` per the pricing config. The credits_per_input_unit in
+`pricing.json` is set generously and calibrated down over time.
+"""
+
 import asyncio
 import contextlib
 import time
@@ -50,7 +57,8 @@ class TempolorMusicProvider(MusicProvider):
             audio_resp = await client.get(audio_url, timeout=60.0)
             audio_resp.raise_for_status()
 
-        return MusicResult(audio_bytes=audio_resp.content)
+        usage = {"mode": "input_length", "units": len(prompt), "source": "input_length"}
+        return MusicResult(audio_bytes=audio_resp.content, usage=usage)
 
     async def _poll(self, client: httpx.AsyncClient, item_id: str) -> str:
         deadline = time.monotonic() + _POLL_TIMEOUT

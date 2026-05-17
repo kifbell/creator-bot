@@ -1,11 +1,19 @@
+"""Voice-clone provider interface.
+
+The `usage` dict on CloneResult carries provider-reported metering.
+ElevenLabs IVC is vendor-metered (we query the History endpoint after
+synthesis to obtain the actual character count billed).
+"""
+
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 @dataclass
 class CloneResult:
     audio_bytes: bytes
     mime_type: str = "audio/mpeg"
+    usage: dict = field(default_factory=dict)
 
 
 class VoiceCloneProvider(ABC):

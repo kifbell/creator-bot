@@ -9,7 +9,9 @@ class StubTTSProvider(TTSProvider):
         return [_STUB_VOICE]
 
     async def synthesize(self, text: str, voice_id: str) -> TTSResult:
-        return TTSResult(audio_bytes=SILENT_MP3)
+        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
+        return TTSResult(audio_bytes=SILENT_MP3, usage=usage)
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
-        return TTSResult(audio_bytes=SILENT_MP3)
+        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
+        return TTSResult(audio_bytes=SILENT_MP3, usage=usage)

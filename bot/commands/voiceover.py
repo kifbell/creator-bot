@@ -206,7 +206,26 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     cm: CreditManager = context.bot_data["credit_manager"]
     await cm.ensure_user(user_id)
 
-    if not await cm.check_and_deduct(user_id, "voiceover"):
+    if not text:
+        await update.message.reply_text(
+            "❌ Please type some text.", reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    # Length cap from pricing config
+    max_len = cm.cfg.max_length.get("voiceover", 5000)
+    if len(text) > max_len:
+        await update.message.reply_text(
+            f"❌ Text too long ({len(text)} chars). Max is {max_len}.",
+            reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    provider_name = await get_provider(context, user_id, "voiceover_provider", "elevenlabs")
+    ok, ctx_call = await cm.pre_deduct(user_id, "voiceover", provider_name)
+    if not ok:
         bal = await cm.get_balance(user_id)
         await update.message.reply_text(
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
@@ -221,7 +240,6 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    provider_name = await get_provider(context, user_id, "voiceover_provider", "elevenlabs")
     clone_provider = registry.get_voice_clone(provider=provider_name)
 
     voice_name = f"ivc_{update.message.from_user.id}"
@@ -237,7 +255,7 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     except Exception as e:
         if not using_saved:
             delete_temp_file(sample_path)
-        await cm.refund(user_id, "voiceover")
+        await cm.refund_minimum(ctx_call)
         context.user_data.clear()
         await update.message.reply_text(
             f"❌ Voice cloning failed: {e}\nCredits refunded.",
@@ -249,12 +267,21 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         provider_name, time.perf_counter() - _t0, len(text),
     )
 
+    try:
+        settle = await cm.reconcile(ctx_call, result.usage)
+        cost_prefix = "Cost" if ctx_call.mode == "vendor" else "~Cost"
+        cost_line = f"{cost_prefix}: {settle.actual_credits} credits. Balance: {settle.new_balance}."
+    except Exception as e:
+        logger.error("pricing_reconcile_failed call_id=%s err=%r", ctx_call.call_id, e)
+        bal = await cm.get_balance(user_id)
+        cost_line = f"Cost: {ctx_call.minimum} credits. Balance: {bal}."
+
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "voiceover.mp3"
     await update.message.reply_audio(
         audio=audio_file,
         title="Voiceover",
-        caption="Done! The cloned voice has been removed from our servers.",
+        caption=f"Done! The cloned voice has been removed from our servers.\n{cost_line}",
         reply_markup=MAIN_MENU if using_saved else ReplyKeyboardRemove(),
     )
 

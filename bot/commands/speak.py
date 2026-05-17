@@ -236,11 +236,30 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         context.user_data.clear()
         return ConversationHandler.END
 
+    if not text:
+        await update.message.reply_text(
+            "❌ Please type some text.", reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
     user_id = update.message.from_user.id
     cm: CreditManager = context.bot_data["credit_manager"]
     await cm.ensure_user(user_id)
 
-    if not await cm.check_and_deduct(user_id, "speak"):
+    # Length cap from pricing config — bound worst-case cost
+    max_len = cm.cfg.max_length.get("speak", 5000)
+    if len(text) > max_len:
+        await update.message.reply_text(
+            f"❌ Text too long ({len(text)} chars). Max is {max_len}.",
+            reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    provider_name = await get_provider(context, user_id, "tts_provider", "elevenlabs")
+    ok, ctx_call = await cm.pre_deduct(user_id, "speak", provider_name)
+    if not ok:
         bal = await cm.get_balance(user_id)
         await update.message.reply_text(
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
@@ -254,13 +273,12 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    provider_name = await get_provider(context, user_id, "tts_provider", "elevenlabs")
     tts = registry.get_tts(provider=provider_name)
     _t0 = time.perf_counter()
     try:
         result = await tts.synthesize(text=text, voice_id=voice_id)
     except Exception as e:
-        await cm.refund(user_id, "speak")
+        await cm.refund_minimum(ctx_call)
         await update.message.reply_text(
             f"❌ Speech generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
@@ -272,16 +290,38 @@ async def receive_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         provider_name, time.perf_counter() - _t0, len(text),
     )
 
+    try:
+        settle = await cm.reconcile(ctx_call, result.usage)
+        caption = _build_cost_caption(ctx_call.mode, settle)
+    except Exception as e:
+        logger.error("pricing_reconcile_failed call_id=%s err=%r", ctx_call.call_id, e)
+        bal = await cm.get_balance(user_id)
+        caption = f"Cost: {ctx_call.minimum} credits. Balance: {bal}."
+
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"
     await update.message.reply_audio(
         audio=audio_file,
         title=f"Speech — {context.user_data.get('voice_name', '')}",
+        caption=caption,
         reply_markup=MAIN_MENU,
     )
 
     context.user_data.clear()
     return ConversationHandler.END
+
+
+def _build_cost_caption(mode: str, settle) -> str:
+    """Mode-aware caption — vendor (exact) vs input_length (estimated)."""
+    prefix = "Cost" if mode == "vendor" else "~Cost"
+    if settle.delta > 0:
+        return f"{prefix}: {settle.actual_credits} credits. Balance: {settle.new_balance}."
+    if settle.delta < 0:
+        return (
+            f"{prefix}: {settle.actual_credits} credits "
+            f"({-settle.delta} refunded). Balance: {settle.new_balance}."
+        )
+    return f"{prefix}: {settle.actual_credits} credits. Balance: {settle.new_balance}."
 
 
 async def describe_voice_received(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -299,11 +339,30 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.clear()
         return ConversationHandler.END
 
+    if not text:
+        await update.message.reply_text(
+            "❌ Please type some text.", reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
     user_id = update.message.from_user.id
     cm: CreditManager = context.bot_data["credit_manager"]
     await cm.ensure_user(user_id)
 
-    if not await cm.check_and_deduct(user_id, "speak"):
+    # Length cap from pricing config
+    max_len = cm.cfg.max_length.get("speak", 5000)
+    if len(text) > max_len:
+        await update.message.reply_text(
+            f"❌ Text too long ({len(text)} chars). Max is {max_len}.",
+            reply_markup=MAIN_MENU,
+        )
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    provider_name = await get_provider(context, user_id, "tts_provider", "elevenlabs")
+    ok, ctx_call = await cm.pre_deduct(user_id, "speak", provider_name)
+    if not ok:
         bal = await cm.get_balance(user_id)
         await update.message.reply_text(
             f"❌ Not enough credits (balance: {bal}).\nTap 💳 Credits to top up.",
@@ -317,13 +376,12 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.chat.send_action(ChatAction.UPLOAD_VOICE)
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    provider_name = await get_provider(context, user_id, "tts_provider", "elevenlabs")
     tts = registry.get_tts(provider=provider_name)
     _t0 = time.perf_counter()
     try:
         result = await tts.synthesize_described(text=text, description=description)
     except Exception as e:
-        await cm.refund(user_id, "speak")
+        await cm.refund_minimum(ctx_call)
         await update.message.reply_text(
             f"❌ Speech generation failed: {e}\nCredits refunded.",
             reply_markup=MAIN_MENU,
@@ -335,6 +393,14 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
         provider_name, time.perf_counter() - _t0, len(text),
     )
 
+    try:
+        settle = await cm.reconcile(ctx_call, result.usage)
+        caption = _build_cost_caption(ctx_call.mode, settle)
+    except Exception as e:
+        logger.error("pricing_reconcile_failed call_id=%s err=%r", ctx_call.call_id, e)
+        bal = await cm.get_balance(user_id)
+        caption = f"Cost: {ctx_call.minimum} credits. Balance: {bal}."
+
     audio_file = io.BytesIO(result.audio_bytes)
     audio_file.name = "speech.mp3"
 
@@ -344,6 +410,7 @@ async def receive_described_text(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_audio(
         audio=audio_file,
         title=f"Speech — {description}",
+        caption=caption,
         reply_markup=MAIN_MENU if using_saved else ReplyKeyboardRemove(),
     )
 

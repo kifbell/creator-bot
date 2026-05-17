@@ -1,4 +1,4 @@
-from pydantic import field_validator
+from pydantic import field_validator, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 _VALID_ENVS = {"test", "prod"}
@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     yookassa_shop_id: str = ""
     yookassa_secret_key: str = ""
     bot_env: str = "prod"
+    pricing_config_path: str = Field(default="", description="Override path to pricing.json. Default: config/pricing.json (or config/pricing.test.json under BOT_ENV=test).")
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

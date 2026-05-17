@@ -21,7 +21,6 @@ from telegram.ext import (
 )
 
 from bot.commands.common import BTN_CREDITS, MAIN_MENU, USER_TEXT, cancel, menu_fallbacks
-from bot.credits.costs import TOPUP_BUTTONS, credits_for_rub
 from bot.credits.manager import CreditManager
 from bot.registry import ProviderRegistry
 
@@ -67,8 +66,11 @@ def _idempotency_key_for(
     return cache[cache_key]
 
 
-def _amount_keyboard() -> ReplyKeyboardMarkup:
-    rows = [[KeyboardButton(f"{rub} ₽ ({credits_for_rub(rub)} credits)")] for rub in TOPUP_BUTTONS]
+def _amount_keyboard(cm: CreditManager) -> ReplyKeyboardMarkup:
+    rows = [
+        [KeyboardButton(f"{rub} ₽ ({cm.cfg.credits_for_rub(rub)} credits)")]
+        for rub in cm.cfg.topup_buttons
+    ]
     return ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=True)
 
 
@@ -111,6 +113,7 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
     user_id = update.message.from_user.id
     await cm.ensure_user(user_id)
     balance = await cm.get_balance(user_id)
+    balance_line = _format_balance_line(balance)
 
     # Resume Payment UX: if there's an orphan pending payment, offer to resume.
     from bot.db import credits as db
@@ -129,7 +132,7 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
                 resize_keyboard=True,
             )
             await update.message.reply_text(
-                f"💳 *Balance: {balance} credits*\n\n"
+                f"{balance_line}\n\n"
                 f"⏳ You have a pending payment from {pending['created_at']}\n"
                 f"({pending['amount_rub']} ₽ → {pending['credits']} credits, via {pending['provider']}).\n\n"
                 f"Resume to check it, abandon to cancel, or start a new one.",
@@ -155,11 +158,22 @@ async def topup_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
         return ConversationHandler.END
 
     await update.message.reply_text(
-        f"💳 *Balance: {balance} credits*\n\nChoose a payment method:",
+        f"{balance_line}\n\nChoose a payment method:",
         parse_mode="Markdown",
         reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True, one_time_keyboard=True),
     )
     return CHOOSING_METHOD
+
+
+def _format_balance_line(balance: int) -> str:
+    """Markdown-formatted balance line; warns when balance is negative
+    (a possible outcome of overage reconciliation under usage-based pricing)."""
+    if balance < 0:
+        return (
+            f"⚠️ *Balance: {balance} credits* — you owe {-balance} credits "
+            f"from a previous generation. Top up to resume."
+        )
+    return f"💳 *Balance: {balance} credits*"
 
 
 # ── State 40: method choice ───────────────────────────────────────────
@@ -181,10 +195,11 @@ async def method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END
 
     context.user_data["payment_provider_key"] = provider_key
+    cm: CreditManager = context.bot_data["credit_manager"]
     await update.message.reply_text(
         f"Selected: *{label}*\n\nChoose an amount:",
         parse_mode="Markdown",
-        reply_markup=_amount_keyboard(),
+        reply_markup=_amount_keyboard(cm),
     )
     return CHOOSING_AMOUNT
 
@@ -193,8 +208,9 @@ async def method_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
 
 async def amount_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
+    cm: CreditManager = context.bot_data["credit_manager"]
     amount_rub = _parse_amount(text)
-    if amount_rub is None or amount_rub not in TOPUP_BUTTONS:
+    if amount_rub is None or amount_rub not in cm.cfg.topup_buttons:
         await update.message.reply_text("Please tap one of the amount buttons.")
         return CHOOSING_AMOUNT
 
@@ -206,7 +222,6 @@ async def amount_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return ConversationHandler.END
 
     registry: ProviderRegistry = context.bot_data["registry"]
-    cm: CreditManager = context.bot_data["credit_manager"]
     provider = registry.get_payment(provider_key)
 
     idempotency_key = _idempotency_key_for(context, provider_key, amount_rub)
@@ -231,7 +246,7 @@ async def amount_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE) -> i
         return CHOOSING_AMOUNT
 
     context.user_data["payment_id"] = payment_id
-    credits = credits_for_rub(amount_rub)
+    credits = cm.cfg.credits_for_rub(amount_rub)
 
     await update.message.reply_text(
         f"💳 Payment created: *{amount_rub} ₽ → {credits} credits*\n\n"
