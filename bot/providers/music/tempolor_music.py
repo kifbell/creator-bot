@@ -12,6 +12,7 @@ import time
 import httpx
 
 from bot.providers.music.base_music import MusicProvider, MusicResult
+from bot.providers.usage import input_length_usage
 
 _GENERATE_URL = "https://api.tempolor.com/open-apis/v1/song/generate"
 _QUERY_URL = "https://api.tempolor.com/open-apis/v1/song/query"
@@ -57,8 +58,7 @@ class TempolorMusicProvider(MusicProvider):
             audio_resp = await client.get(audio_url, timeout=60.0)
             audio_resp.raise_for_status()
 
-        usage = {"mode": "input_length", "units": len(prompt), "source": "input_length"}
-        return MusicResult(audio_bytes=audio_resp.content, usage=usage)
+        return MusicResult(audio_bytes=audio_resp.content, usage=input_length_usage(len(prompt)))
 
     async def _poll(self, client: httpx.AsyncClient, item_id: str) -> str:
         deadline = time.monotonic() + _POLL_TIMEOUT

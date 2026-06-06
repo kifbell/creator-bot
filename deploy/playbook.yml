@@ -41,6 +41,13 @@
         dest: "{{ app_dir }}/.env"
         mode: "0600"
 
+    - name: Copy Google TTS credentials JSON to server
+      copy:
+        src: "{{ google_credentials_local_path | default('../google-creds.json') }}"
+        dest: "{{ app_dir }}/google-creds.json"
+        mode: "0400"
+      when: google_credentials_local_path is defined or lookup('ansible.builtin.fileglob', '../google-creds.json', errors='ignore') | length > 0
+
     - name: Deploy systemd service file
       become: true
       template:

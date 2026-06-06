@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -33,9 +34,12 @@ from bot.providers.music.tempolor_music import TempolorMusicProvider
 from bot.providers.stub.stub_clone import StubVoiceCloneProvider
 from bot.providers.stub.stub_music import StubMusicProvider
 from bot.providers.stub.stub_tts import StubTTSProvider
+from bot.providers.tts.azure_tts import AzureTTSProvider
 from bot.providers.tts.elevenlabs_tts import ElevenLabsTTSProvider
+from bot.providers.tts.google_tts import GoogleTTSProvider
 from bot.providers.tts.openai_tts import OpenAITTSProvider
 from bot.providers.voice_clone.elevenlabs_clone import ElevenLabsCloneProvider
+from bot.providers.voice_clone.typecast_clone import TypecastCloneProvider
 from bot.registry import ProviderRegistry
 
 logging.basicConfig(
@@ -133,9 +137,12 @@ def main() -> None:
             tts_providers={
                 "elevenlabs": StubTTSProvider(),
                 "openai": StubTTSProvider(),
+                "google": StubTTSProvider(),
+                "azure": StubTTSProvider(),
             },
             clone_providers={
                 "elevenlabs": StubVoiceCloneProvider(),
+                "typecast": StubVoiceCloneProvider(),
             },
             music_providers={
                 "elevenlabs": StubMusicProvider(),
@@ -147,18 +154,78 @@ def main() -> None:
         logger.info("BOT_ENV=prod — using real API providers")
         el_sem = asyncio.Semaphore(3)
         tempolor_sem = asyncio.Semaphore(3)
+
+        tts_providers: dict = {}
+        clone_providers: dict = {}
+        music_providers: dict = {}
+
+        # ElevenLabs — one API key covers TTS, voice clone, and music.
+        if settings.elevenlabs_api_key:
+            tts_providers["elevenlabs"] = ElevenLabsTTSProvider(
+                api_key=settings.elevenlabs_api_key, semaphore=el_sem,
+            )
+            clone_providers["elevenlabs"] = ElevenLabsCloneProvider(
+                api_key=settings.elevenlabs_api_key, semaphore=el_sem,
+            )
+            music_providers["elevenlabs"] = ElevenLabsMusicProvider(
+                api_key=settings.elevenlabs_api_key, semaphore=el_sem,
+            )
+        else:
+            logger.warning("ELEVENLABS_API_KEY not set — ElevenLabs TTS / clone / music skipped")
+
+        # OpenAI — TTS only.
+        if settings.openai_api_key:
+            tts_providers["openai"] = OpenAITTSProvider(api_key=settings.openai_api_key)
+        else:
+            logger.warning("OPENAI_API_KEY not set — OpenAI TTS skipped")
+
+        # Tempolor — music only.
+        if settings.tempolor_api_key:
+            music_providers["tempolor"] = TempolorMusicProvider(
+                api_key=settings.tempolor_api_key, semaphore=tempolor_sem,
+            )
+        else:
+            logger.warning("TEMPOLOR_API_KEY not set — Tempolor music skipped")
+
+        # Google TTS — SDK reads GOOGLE_APPLICATION_CREDENTIALS from os.environ
+        # directly; propagate from settings so .env-supplied paths take effect.
+        # The SDK validates the credentials file eagerly, so wrap construction.
+        google_creds = settings.google_application_credentials or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
+        if google_creds:
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_creds
+            try:
+                tts_providers["google"] = GoogleTTSProvider()
+            except Exception as e:
+                logger.warning("Google TTS init failed — provider skipped: %r", e)
+        else:
+            logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set — Google TTS skipped")
+
+        # Azure TTS — needs both subscription key and region endpoint.
+        if settings.azure_speech_key and settings.azure_speech_endpoint:
+            tts_providers["azure"] = AzureTTSProvider(
+                api_key=settings.azure_speech_key,
+                endpoint=settings.azure_speech_endpoint,
+            )
+        else:
+            logger.warning("AZURE_SPEECH_KEY/AZURE_SPEECH_ENDPOINT not set — Azure TTS skipped")
+
+        # Typecast — voice clone only.
+        if settings.typecast_api_key:
+            typecast_sem = asyncio.Semaphore(3)
+            clone_providers["typecast"] = TypecastCloneProvider(
+                api_key=settings.typecast_api_key, semaphore=typecast_sem,
+            )
+        else:
+            logger.warning("TYPECAST_API_KEY not set — Typecast voice clone skipped")
+
+        logger.info("Registered TTS providers: %s", sorted(tts_providers.keys()))
+        logger.info("Registered voice-clone providers: %s", sorted(clone_providers.keys()))
+        logger.info("Registered music providers: %s", sorted(music_providers.keys()))
+
         registry = ProviderRegistry(
-            tts_providers={
-                "elevenlabs": ElevenLabsTTSProvider(api_key=settings.elevenlabs_api_key, semaphore=el_sem),
-                "openai": OpenAITTSProvider(api_key=settings.openai_api_key),
-            },
-            clone_providers={
-                "elevenlabs": ElevenLabsCloneProvider(api_key=settings.elevenlabs_api_key, semaphore=el_sem),
-            },
-            music_providers={
-                "elevenlabs": ElevenLabsMusicProvider(api_key=settings.elevenlabs_api_key, semaphore=el_sem),
-                "tempolor": TempolorMusicProvider(api_key=settings.tempolor_api_key, semaphore=tempolor_sem),
-            },
+            tts_providers=tts_providers,
+            clone_providers=clone_providers,
+            music_providers=music_providers,
             payment_providers=payment_providers,
         )
 

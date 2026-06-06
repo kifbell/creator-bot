@@ -1,9 +1,8 @@
-"""ElevenLabs Music provider — Mode A (vendor-metered).
+"""ElevenLabs Music provider — input_length self-metering.
 
-After generation we query the History endpoint to obtain the exact
-units billed. If the music endpoint reports something other than chars,
-the calibration loop will surface the discrepancy and the rate table
-can be adjusted (or the metering can be ported to input_length).
+ElevenLabs's ``music.compose`` returns a byte iterator without per-request
+billing. We self-meter on ``len(prompt)``; calibration drift is absorbed
+by ``multiplier`` in ``config/pricing.json``.
 """
 
 import asyncio
@@ -12,7 +11,7 @@ import contextlib
 from elevenlabs.client import ElevenLabs
 
 from bot.providers.music.base_music import MusicProvider, MusicResult
-from bot.providers.tts.elevenlabs_tts import _meter_via_history
+from bot.providers.usage import input_length_usage
 
 
 class ElevenLabsMusicProvider(MusicProvider):
@@ -21,16 +20,14 @@ class ElevenLabsMusicProvider(MusicProvider):
         self._semaphore = semaphore
 
     async def generate(self, prompt: str) -> MusicResult:
-        def _generate_and_meter():
+        def _generate():
             audio_gen = self._client.music.compose(
                 prompt=prompt,
                 music_length_ms=5000,
             )
-            audio = b"".join(audio_gen)
-            return audio, _meter_via_history(self._client)
+            return b"".join(audio_gen)
 
         async with self._semaphore or contextlib.nullcontext():
-            audio_bytes, (source, units) = await asyncio.to_thread(_generate_and_meter)
+            audio_bytes = await asyncio.to_thread(_generate)
 
-        usage = {"mode": "vendor", "units": int(units), "source": source}
-        return MusicResult(audio_bytes=audio_bytes, usage=usage)
+        return MusicResult(audio_bytes=audio_bytes, usage=input_length_usage(len(prompt)))

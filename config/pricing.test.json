@@ -3,8 +3,10 @@
   "rub_to_credits": 10,
   "providers": {
     "elevenlabs": {
-      "mode": "vendor",
+      "mode": "input_length",
       "multiplier": 1.01,
+      "credits_per_input_unit": 0.01,
+      "input_unit": "char",
       "pre_deduct_minimum_credits": 1,
       "feature_minimums": {
         "speak": 1,
@@ -30,6 +32,36 @@
       "pre_deduct_minimum_credits": 1,
       "feature_minimums": {
         "song": 1
+      }
+    },
+    "google": {
+      "mode": "input_length",
+      "multiplier": 1.01,
+      "credits_per_input_unit": 0.001,
+      "input_unit": "char",
+      "pre_deduct_minimum_credits": 1,
+      "feature_minimums": {
+        "speak": 1
+      }
+    },
+    "azure": {
+      "mode": "input_length",
+      "multiplier": 1.01,
+      "credits_per_input_unit": 0.001,
+      "input_unit": "char",
+      "pre_deduct_minimum_credits": 1,
+      "feature_minimums": {
+        "speak": 1
+      }
+    },
+    "typecast": {
+      "mode": "input_length",
+      "multiplier": 1.01,
+      "credits_per_input_unit": 0.001,
+      "input_unit": "char",
+      "pre_deduct_minimum_credits": 1,
+      "feature_minimums": {
+        "voiceover": 1
       }
     },
     "yookassa": {

@@ -1,5 +1,6 @@
 from bot.providers.stub import SILENT_MP3
 from bot.providers.tts.base_tts import TTSProvider, TTSResult, TTSVoice
+from bot.providers.usage import input_length_usage
 
 _STUB_VOICE = TTSVoice(voice_id="stub-voice-1", name="Stub Voice")
 
@@ -9,9 +10,7 @@ class StubTTSProvider(TTSProvider):
         return [_STUB_VOICE]
 
     async def synthesize(self, text: str, voice_id: str) -> TTSResult:
-        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
-        return TTSResult(audio_bytes=SILENT_MP3, usage=usage)
+        return TTSResult(audio_bytes=SILENT_MP3, usage=input_length_usage(len(text)))
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
-        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
-        return TTSResult(audio_bytes=SILENT_MP3, usage=usage)
+        return TTSResult(audio_bytes=SILENT_MP3, usage=input_length_usage(len(text)))

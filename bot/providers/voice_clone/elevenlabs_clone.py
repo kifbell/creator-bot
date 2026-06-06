@@ -1,7 +1,10 @@
-"""ElevenLabs Instant Voice Clone provider — Mode A (vendor-metered).
+"""ElevenLabs Instant Voice Clone provider — input_length self-metering.
 
-After synthesis we query the History endpoint to obtain the exact char
-count billed. Ephemeral voice cleanup happens regardless of metering.
+ElevenLabs's clone+synthesize flow uses ``text_to_speech.convert`` which
+returns a byte iterator without per-request billing. We self-meter on
+``len(text)``; calibration drift is absorbed by the ``multiplier`` knob.
+
+Ephemeral voice cleanup happens regardless of synthesis outcome.
 """
 
 import asyncio
@@ -9,7 +12,7 @@ import contextlib
 
 from elevenlabs.client import ElevenLabs
 
-from bot.providers.tts.elevenlabs_tts import _meter_via_history
+from bot.providers.usage import input_length_usage
 from bot.providers.voice_clone.base_clone import CloneResult, VoiceCloneProvider
 
 
@@ -25,7 +28,6 @@ class ElevenLabsCloneProvider(VoiceCloneProvider):
         voice_name: str,
     ) -> CloneResult:
         def _run():
-            # IVC: upload sample and create ephemeral voice
             voice = self._client.clone(
                 name=voice_name,
                 description="Ephemeral IVC voice — will be deleted after synthesis.",
@@ -38,15 +40,11 @@ class ElevenLabsCloneProvider(VoiceCloneProvider):
                     text=text,
                     model_id="eleven_multilingual_v2",
                 )
-                audio_bytes = b"".join(audio_gen)
-                meter = _meter_via_history(self._client)
+                return b"".join(audio_gen)
             finally:
-                # Always clean up — free accounts have a voice slot limit
                 self._client.voices.delete(voice_id=voice_id)
-            return audio_bytes, meter
 
         async with self._semaphore or contextlib.nullcontext():
-            audio_bytes, (source, units) = await asyncio.to_thread(_run)
+            audio_bytes = await asyncio.to_thread(_run)
 
-        usage = {"mode": "vendor", "units": int(units), "source": source}
-        return CloneResult(audio_bytes=audio_bytes, usage=usage)
+        return CloneResult(audio_bytes=audio_bytes, usage=input_length_usage(len(text)))

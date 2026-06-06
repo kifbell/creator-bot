@@ -12,6 +12,7 @@ import asyncio
 from openai import OpenAI
 
 from bot.providers.tts.base_tts import TTSProvider, TTSResult, TTSVoice
+from bot.providers.usage import input_length_usage
 
 _VOICES = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer"]
 _DEFAULT_VOICE = "coral"
@@ -35,8 +36,7 @@ class OpenAITTSProvider(TTSProvider):
                 return response.read()
 
         audio_bytes = await asyncio.to_thread(_synth)
-        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
-        return TTSResult(audio_bytes=audio_bytes, usage=usage)
+        return TTSResult(audio_bytes=audio_bytes, usage=input_length_usage(len(text)))
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
         def _synth():
@@ -49,5 +49,4 @@ class OpenAITTSProvider(TTSProvider):
                 return response.read()
 
         audio_bytes = await asyncio.to_thread(_synth)
-        usage = {"mode": "input_length", "units": len(text), "source": "input_length"}
-        return TTSResult(audio_bytes=audio_bytes, usage=usage)
+        return TTSResult(audio_bytes=audio_bytes, usage=input_length_usage(len(text)))

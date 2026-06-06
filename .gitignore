@@ -1,4 +1,6 @@
 .env
+api_info*.md
+google-creds.json
 .venv/
 __pycache__/
 *.pyc

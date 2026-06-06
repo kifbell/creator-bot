@@ -45,7 +45,7 @@ class VendorMeteredProvider(_ProviderBase):
 class InputLengthProvider(_ProviderBase):
     mode: Literal["input_length"]
     multiplier: Annotated[float, Field(gt=1.0, lt=10.0)]
-    credits_per_input_unit: float = Field(gt=0)
+    credits_per_input_unit: float = Field(gt=0, lt=100)
     input_unit: Literal["char", "second"]
     pre_deduct_minimum_credits: int = Field(ge=0)
     feature_minimums: dict[str, int] = Field(default_factory=dict)
