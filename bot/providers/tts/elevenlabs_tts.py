@@ -1,12 +1,4 @@
-"""ElevenLabs TTS provider — input_length self-metering.
-
-ElevenLabs's ``text_to_speech.convert`` returns a byte iterator with no
-usage payload and no request-ID we can correlate to the History endpoint.
-Polling ``history.get_all`` without correlation races across concurrent
-users on the same API key, so this provider self-meters on ``len(text)``
-like every other provider; calibration drift is absorbed by ``multiplier``
-in ``config/pricing.json``.
-"""
+"""ElevenLabs TTS provider."""
 
 import asyncio
 import base64
@@ -44,6 +36,7 @@ class ElevenLabsTTSProvider(TTSProvider):
         return TTSResult(audio_bytes=audio_bytes, usage=input_length_usage(len(text)))
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
+        # original_len: bill what the user typed, not the padded vendor text.
         original_len = len(text)
         if len(text) < 100:
             text = text + (" " + text) * ((100 // len(text)) + 1)

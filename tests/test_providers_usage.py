@@ -87,20 +87,14 @@ async def test_openai_returns_input_length_chars(monkeypatch) -> None:
 
 
 # ─── ElevenLabs — input_length self-metering ──────────────────────────
-# `convert()` returns a byte iterator with no usage payload and no
-# request-ID we can correlate to History, so we self-meter on len(text)
-# like every other provider. See `bot/providers/tts/elevenlabs_tts.py`.
 
 
 class _FakeElevenLabsClient:
-    """Mocks the small slice of the ElevenLabs SDK we actually use."""
-
     def __init__(self, **kwargs):
         self.text_to_speech = self._TTSNamespace()
         self.text_to_voice = self._VoiceNamespace()
         self.voices = self._VoicesNamespace()
         self.music = self._MusicNamespace()
-        # `clone` is a top-level method on the SDK client.
         self.clone = self._clone
 
     class _TTSNamespace:
@@ -148,9 +142,7 @@ async def test_elevenlabs_tts_returns_input_length(monkeypatch) -> None:
 
 @pytest.mark.asyncio
 async def test_elevenlabs_described_bills_original_len_not_padded(monkeypatch) -> None:
-    """Regression: synthesize_described pads short text to 100 chars before
-    calling the vendor, but the user must be billed for the chars they
-    actually typed."""
+    """Regression: bill on user-typed length, not vendor-side padding."""
     from bot.providers.tts import elevenlabs_tts
 
     monkeypatch.setattr(elevenlabs_tts, "ElevenLabs", _FakeElevenLabsClient)
@@ -181,7 +173,6 @@ async def test_elevenlabs_clone_deletes_voice_even_on_failure(monkeypatch) -> No
             def convert(**kwargs):
                 raise RuntimeError("synth failed mid-stream")
 
-    # Reset the class-level delete log before this test.
     _FakeElevenLabsClient._VoicesNamespace.delete_calls = []
     monkeypatch.setattr(elevenlabs_clone, "ElevenLabs", _RaisingClient)
     p = elevenlabs_clone.ElevenLabsCloneProvider(api_key="stub")
@@ -232,7 +223,6 @@ async def test_google_tts_returns_input_length(monkeypatch) -> None:
 class _FakeAzureResult:
     def __init__(self, audio: bytes, completed: bool) -> None:
         self.audio_data = audio
-        # Match the SDK's enum semantics: completed → SynthesizingAudioCompleted.
         import azure.cognitiveservices.speech as speechsdk
         self.reason = (
             speechsdk.ResultReason.SynthesizingAudioCompleted if completed
@@ -311,7 +301,6 @@ async def test_typecast_clone_returns_input_length(monkeypatch) -> None:
     p = typecast_clone.TypecastCloneProvider(api_key="stub")
     result = await p.clone_and_speak(sample_path="/dev/null", text="hello", voice_name="v")
     assert result.usage == {"mode": "input_length", "units": 5, "source": "input_length"}
-    # Voice slot must have been freed.
     assert _FakeTypecastClient.delete_calls == ["uc_test_123"]
 
 

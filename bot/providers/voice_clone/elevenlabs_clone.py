@@ -1,11 +1,4 @@
-"""ElevenLabs Instant Voice Clone provider — input_length self-metering.
-
-ElevenLabs's clone+synthesize flow uses ``text_to_speech.convert`` which
-returns a byte iterator without per-request billing. We self-meter on
-``len(text)``; calibration drift is absorbed by the ``multiplier`` knob.
-
-Ephemeral voice cleanup happens regardless of synthesis outcome.
-"""
+"""ElevenLabs Instant Voice Clone provider."""
 
 import asyncio
 import contextlib
@@ -42,6 +35,7 @@ class ElevenLabsCloneProvider(VoiceCloneProvider):
                 )
                 return b"".join(audio_gen)
             finally:
+                # Ephemeral voice slot must be freed even on synthesis failure.
                 self._client.voices.delete(voice_id=voice_id)
 
         async with self._semaphore or contextlib.nullcontext():

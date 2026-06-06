@@ -1,13 +1,4 @@
-"""Typecast voice-cloning provider — input_length self-metering.
-
-Uses ``AsyncTypecast`` so calls don't need ``asyncio.to_thread``. The
-flow mirrors ``elevenlabs_clone.py``: clone an ephemeral voice from the
-user's WAV, synthesize, then delete the voice in a ``try/finally`` to
-free the per-account slot quota (matters most on free/lower tiers).
-
-Typecast bills per call; the SDK response carries audio bytes only, no
-usage payload — we self-meter on ``len(text)``.
-"""
+"""Typecast voice-cloning provider."""
 
 import asyncio
 import contextlib
@@ -57,6 +48,7 @@ class TypecastCloneProvider(VoiceCloneProvider):
                 )
                 audio_bytes = resp.audio_data
             finally:
+                # voice slot must be freed even on failure to avoid quota leaks
                 try:
                     await self._client.delete_voice(voice_id)
                 except Exception as e:  # noqa: BLE001 — best-effort cleanup

@@ -1,13 +1,4 @@
-"""Microsoft Azure Neural TTS provider — input_length self-metering.
-
-Azure's Speech SDK is sync; wrapped with ``asyncio.to_thread`` so it
-doesn't block the event loop. Region is parsed from the endpoint URL
-(``https://<region>.api.cognitive.microsoft.com/``) so the operator only
-configures one place.
-
-Azure bills per character of input; the synthesis response carries audio
-bytes only, with no usage payload — we self-meter on ``len(text)``.
-"""
+"""Microsoft Azure Neural TTS provider."""
 
 import asyncio
 
@@ -40,7 +31,7 @@ class AzureTTSProvider(TTSProvider):
         return TTSResult(audio_bytes=audio_bytes, usage=input_length_usage(len(text)))
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
-        # Azure doesn't support free-text voice description; use default voice.
+        # Azure doesn't support free-text voice description.
         return await self.synthesize(text, _DEFAULT_VOICE)
 
     def _sync_synthesize(self, text: str, voice_id: str) -> bytes:

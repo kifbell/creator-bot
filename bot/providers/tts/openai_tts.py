@@ -1,11 +1,4 @@
-"""OpenAI TTS provider — Mode B (input_length self-metering).
-
-OpenAI gpt-4o-mini-tts does not expose per-call usage on the synthesis
-response. We meter on input characters; `credits_per_input_unit` in
-`pricing.json` is set generously to cover the unknown output-audio-token
-cost component, and calibrated down over time via the SQL calibration
-loop documented in UNIFIED_PRICING_PLAN.md §10.
-"""
+"""OpenAI TTS provider."""
 
 import asyncio
 

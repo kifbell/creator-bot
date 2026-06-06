@@ -159,7 +159,6 @@ def main() -> None:
         clone_providers: dict = {}
         music_providers: dict = {}
 
-        # ElevenLabs — one API key covers TTS, voice clone, and music.
         if settings.elevenlabs_api_key:
             tts_providers["elevenlabs"] = ElevenLabsTTSProvider(
                 api_key=settings.elevenlabs_api_key, semaphore=el_sem,
@@ -173,13 +172,11 @@ def main() -> None:
         else:
             logger.warning("ELEVENLABS_API_KEY not set — ElevenLabs TTS / clone / music skipped")
 
-        # OpenAI — TTS only.
         if settings.openai_api_key:
             tts_providers["openai"] = OpenAITTSProvider(api_key=settings.openai_api_key)
         else:
             logger.warning("OPENAI_API_KEY not set — OpenAI TTS skipped")
 
-        # Tempolor — music only.
         if settings.tempolor_api_key:
             music_providers["tempolor"] = TempolorMusicProvider(
                 api_key=settings.tempolor_api_key, semaphore=tempolor_sem,
@@ -187,20 +184,17 @@ def main() -> None:
         else:
             logger.warning("TEMPOLOR_API_KEY not set — Tempolor music skipped")
 
-        # Google TTS — SDK reads GOOGLE_APPLICATION_CREDENTIALS from os.environ
-        # directly; propagate from settings so .env-supplied paths take effect.
-        # The SDK validates the credentials file eagerly, so wrap construction.
         google_creds = settings.google_application_credentials or os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "")
         if google_creds:
             os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = google_creds
             try:
+                # Google SDK validates the credentials file eagerly on construct.
                 tts_providers["google"] = GoogleTTSProvider()
             except Exception as e:
                 logger.warning("Google TTS init failed — provider skipped: %r", e)
         else:
             logger.warning("GOOGLE_APPLICATION_CREDENTIALS not set — Google TTS skipped")
 
-        # Azure TTS — needs both subscription key and region endpoint.
         if settings.azure_speech_key and settings.azure_speech_endpoint:
             tts_providers["azure"] = AzureTTSProvider(
                 api_key=settings.azure_speech_key,
@@ -209,7 +203,6 @@ def main() -> None:
         else:
             logger.warning("AZURE_SPEECH_KEY/AZURE_SPEECH_ENDPOINT not set — Azure TTS skipped")
 
-        # Typecast — voice clone only.
         if settings.typecast_api_key:
             typecast_sem = asyncio.Semaphore(3)
             clone_providers["typecast"] = TypecastCloneProvider(

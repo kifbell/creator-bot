@@ -1,9 +1,4 @@
-"""ElevenLabs Music provider — input_length self-metering.
-
-ElevenLabs's ``music.compose`` returns a byte iterator without per-request
-billing. We self-meter on ``len(prompt)``; calibration drift is absorbed
-by ``multiplier`` in ``config/pricing.json``.
-"""
+"""ElevenLabs Music provider."""
 
 import asyncio
 import contextlib

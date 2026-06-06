@@ -1,9 +1,4 @@
-"""Tempolor music provider — Mode B (input_length self-metering).
-
-Tempolor's response doesn't include a per-call invoice, so we meter on
-`len(prompt)` per the pricing config. The credits_per_input_unit in
-`pricing.json` is set generously and calibrated down over time.
-"""
+"""Tempolor music provider."""
 
 import asyncio
 import contextlib

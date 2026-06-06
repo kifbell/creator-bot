@@ -1,13 +1,4 @@
-"""Google Cloud Text-to-Speech provider — input_length self-metering.
-
-SDK reads ``GOOGLE_APPLICATION_CREDENTIALS`` from the environment
-automatically; it accepts both service-account JSONs and user OAuth
-credentials. The sync SDK is wrapped with ``asyncio.to_thread`` so it
-doesn't block the event loop, matching ``tempolor_music.py``.
-
-Google bills per character of input; the response carries audio bytes
-only, with no usage payload — so we self-meter on ``len(text)``.
-"""
+"""Google Cloud Text-to-Speech provider."""
 
 import asyncio
 
@@ -32,7 +23,7 @@ class GoogleTTSProvider(TTSProvider):
         return TTSResult(audio_bytes=audio_bytes, usage=input_length_usage(len(text)))
 
     async def synthesize_described(self, text: str, description: str) -> TTSResult:
-        # Google doesn't support free-text voice description; use default voice.
+        # Google doesn't support free-text voice description.
         return await self.synthesize(text, _DEFAULT_VOICE)
 
     def _sync_synthesize(self, text: str, voice_id: str) -> bytes:
