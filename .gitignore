@@ -1,6 +1,8 @@
 .env
 api_info*.md
 google-creds.json
+CLAUDE.md
+AGENTS.md
 .venv/
 __pycache__/
 *.pyc
